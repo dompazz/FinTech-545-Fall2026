@@ -64,6 +64,12 @@ format:
         % header at the bottom of a page, break, and repeat the header on the
         % next page with no rows under it. Require room for a few lines first.
         \AtBeginEnvironment{longtable}{\Needspace*{8\baselineskip}}
+        % A long file name in a code span has no break points, so TeX runs it
+        % into the margin rather than moving it. Make the underscore a legal
+        % break so names like model_based_simulation_with_copulas.jl can wrap.
+        \newcommand{\breakableunderscore}{\char`\_\allowbreak}
+        \let\origtexttt\texttt
+        \renewcommand{\texttt}[1]{{\ttfamily\let\_\breakableunderscore #1}}
     number-sections: true
     number-depth: 3
     toc: true

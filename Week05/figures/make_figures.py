@@ -10,6 +10,7 @@ import numpy as np
 import matplotlib as mpl
 import matplotlib.pyplot as plt
 from scipy import stats
+from numpy.polynomial.legendre import leggauss
 
 INK = "#1f2933"
 MUTED = "#7b8794"
@@ -109,29 +110,126 @@ def es_vs_var():
 RAMP = ["#6ba3f2", "#2f7ce8", "#1553b0", "#08306b"]
 
 
-def joint_exceedance():
-    """P(U1 <= u | U2 <= u) for the Gaussian copula, as u goes to 0.
+def t_copula_C(u, nu, rho, N=600):
+    """C(u, u) for the bivariate t copula.
 
-    The limit is the lower tail dependence coefficient, which is 0 for every
-    rho < 1. Nothing here needs a copula we do not teach.
+    The direct bivariate t CDF loses all its precision past u = 1e-5, so this
+    integrates the normal variance mixture instead. A t is a normal scaled by
+    sqrt(nu / W) with W ~ chi-square(nu), so conditioning on W turns the problem
+    into a bivariate normal CDF under a one dimensional quadrature. Integrating
+    in log W puts the nodes where the mass that matters sits.
+    """
+    a = stats.t.ppf(u, nu)
+    lo, hi = np.log(1e-10), np.log(10 * nu + 60)
+    x, w = leggauss(N)
+    v = 0.5 * (hi - lo) * x + 0.5 * (hi + lo)
+    jw = 0.5 * (hi - lo) * w
+    W = np.exp(v)
+    dens = stats.chi2.pdf(W, nu) * W
+    s = a * np.sqrt(W / nu)
+    mvn = stats.multivariate_normal([0, 0], [[1, rho], [rho, 1]])
+    return float(np.sum(jw * dens * mvn.cdf(np.column_stack([s, s]))))
+
+
+def lower_tail_dep(nu, rho):
+    """Lower tail dependence of the t copula."""
+    return 2 * stats.t.cdf(-np.sqrt((nu + 1) * (1 - rho) / (1 + rho)), nu + 1)
+
+
+def normal_vs_t():
+    """A standard normal against a t with 8 degrees of freedom, both scaled to
+    unit variance. Linear scale on the left, log density on the right."""
+    nu = 8
+    s = 1.0 / np.sqrt(nu / (nu - 2))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.6, 3.0))
+
+    x = np.linspace(-4.5, 4.5, 900)
+    ax1.plot(x, stats.norm.pdf(x), color=C1, lw=2.0)
+    ax1.plot(x, stats.t.pdf(x / s, nu) / s, color=C2, lw=2.0)
+    ax1.annotate("normal", (-1.9, stats.norm.pdf(1.9)), textcoords="offset points",
+                 xytext=(-38, 10), fontsize=8, color=C1)
+    ax1.annotate("$t_8$", (0.85, stats.t.pdf(0.85 / s, nu) / s),
+                 textcoords="offset points", xytext=(8, 4), fontsize=8, color=C2)
+    ax1.set_title("Densities, unit variance", loc="left", pad=6)
+    ax1.set_xlabel("standard deviations")
+    ax1.set_yticks([])
+    ax1.spines["left"].set_visible(False)
+    ax1.set_xlim(-4.5, 4.5)
+    ax1.set_ylim(0, 0.46)
+
+    xr = np.linspace(0, 6, 700)
+    ax2.semilogy(xr, stats.norm.pdf(xr), color=C1, lw=2.0)
+    ax2.semilogy(xr, stats.t.pdf(xr / s, nu) / s, color=C2, lw=2.0)
+    for xi in (4, 6):
+        fn_, ft_ = stats.norm.pdf(xi), stats.t.pdf(xi / s, nu) / s
+        ax2.vlines(xi, fn_, ft_, color=MUTED, lw=0.9)
+        ax2.annotate(f"{ft_ / fn_:,.0f}x", (xi, np.sqrt(fn_ * ft_)),
+                     textcoords="offset points", xytext=(5, -3), fontsize=7.5,
+                     color=INK)
+    ax2.annotate("normal", (3.0, stats.norm.pdf(3.0)), textcoords="offset points",
+                 xytext=(-40, -8), fontsize=8, color=C1)
+    ax2.annotate("$t_8$", (3.0, stats.t.pdf(3.0 / s, nu) / s),
+                 textcoords="offset points", xytext=(-10, 9), fontsize=8, color=C2)
+    ax2.set_title("The same two densities, log scale", loc="left", pad=6)
+    ax2.set_xlabel("standard deviations")
+    ax2.set_ylabel("density")
+    ax2.set_xlim(0, 6.6)
+    ax2.set_ylim(1e-9, 1)
+    ax2.grid(axis="y")
+
+    fig.tight_layout()
+    fig.savefig("normal-vs-t.png", bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    print("wrote normal-vs-t.png")
+    for xi in (2, 3, 4, 5, 6):
+        fn_, ft_ = stats.norm.pdf(xi), stats.t.pdf(xi / s, nu) / s
+        pn, pt = stats.norm.cdf(-xi), stats.t.cdf(-xi / s, nu)
+        print(f"  x={xi}  density ratio {ft_ / fn_:>10,.1f}   tail prob ratio {pt / pn:>10,.1f}")
+
+
+def joint_exceedance():
+    """P(U1 <= u | U2 <= u) as u goes to 0, Gaussian on the left, t on the right.
+
+    The limit is the lower tail dependence coefficient. It is 0 for the Gaussian
+    copula at every rho < 1, and positive for the t copula at every finite nu.
     """
     us = np.logspace(-6, -1, 160)
-    fig, ax = plt.subplots(figsize=(6.4, 3.4))
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(7.6, 3.4))
 
+    # --- left: the Gaussian copula, on its way to zero -------------------
     for rho, c in zip((0.3, 0.5, 0.7, 0.9), RAMP):
         y = [stats.multivariate_normal.cdf([stats.norm.ppf(u)] * 2, mean=[0, 0],
                                            cov=[[1, rho], [rho, 1]]) / u for u in us]
-        ax.plot(us, y, color=c, lw=2.0)
-        ax.annotate(rf"$\rho = {rho}$", (us[-1], y[-1]), textcoords="offset points",
-                    xytext=(6, -2), fontsize=8, color=c)
+        ax1.plot(us, y, color=c, lw=2.0)
+        ax1.annotate(rf"$\rho = {rho}$", (us[-1], y[-1]), textcoords="offset points",
+                     xytext=(5, -2), fontsize=8, color=c)
+    ax1.set_title("Gaussian copula", loc="left", pad=6)
 
-    ax.set_xscale("log")
-    ax.set_title("Gaussian copula: $P(U_1 \\leq u \\mid U_2 \\leq u)$", loc="left", pad=6)
-    ax.set_xlabel("$u$")
-    ax.set_ylabel("conditional probability")
-    ax.set_xlim(1e-6, 1.6e-1)
-    ax.set_ylim(0, 0.78)
-    ax.grid(axis="y")
+    # --- right: rho fixed, the tail set by nu ----------------------------
+    RHO = 0.7
+    yg = [stats.multivariate_normal.cdf([stats.norm.ppf(u)] * 2, mean=[0, 0],
+                                        cov=[[1, RHO], [RHO, 1]]) / u for u in us]
+    ax2.plot(us, yg, color=MUTED, lw=2.0, ls=(0, (4, 2)))
+    ax2.annotate("Gaussian", (us[0], yg[0]), textcoords="offset points",
+                 xytext=(5, 7), fontsize=8, color=MUTED)
+
+    for nu, c in zip((16, 8, 4), (RAMP[0], RAMP[2], C2)):
+        y = [t_copula_C(u, nu, RHO) / u for u in us]
+        lam = lower_tail_dep(nu, RHO)
+        ax2.plot(us, y, color=c, lw=2.0)
+        ax2.axhline(lam, color=c, lw=0.8, ls=":", zorder=0)
+        ax2.annotate(rf"$\nu = {nu}$,  $\lambda = {lam:.2f}$", (us[0], y[0]),
+                     textcoords="offset points", xytext=(5, 7), fontsize=8, color=c)
+    ax2.set_title(rf"$t$ copula, $\rho = {RHO}$", loc="left", pad=6)
+
+    for ax in (ax1, ax2):
+        ax.set_xscale("log")
+        ax.set_xlabel("$u$")
+        ax.set_xlim(1e-6, 1.6e-1)
+        ax.set_ylim(0, 0.78)
+        ax.grid(axis="y")
+    ax1.set_ylabel("$P(U_1 \\leq u \\mid U_2 \\leq u)$")
+
     fig.tight_layout()
     fig.savefig("joint-exceedance.png", bbox_inches="tight", facecolor="white")
     plt.close(fig)
@@ -142,9 +240,14 @@ def joint_exceedance():
             c = stats.multivariate_normal.cdf([stats.norm.ppf(u)] * 2, mean=[0, 0],
                                               cov=[[1, rho], [rho, 1]]) / u
             vals.append(f"u={u:g}: {c:.3f}")
-        print("  rho=%.1f  " % rho + "  ".join(vals))
+        print("  gaussian rho=%.1f  " % rho + "  ".join(vals))
+    for nu in (4, 8, 16):
+        vals = "  ".join(f"u={u:g}: {t_copula_C(u, nu, 0.7) / u:.3f}"
+                         for u in (0.05, 0.001, 1e-5))
+        print(f"  t nu={nu:<2} lambda={lower_tail_dep(nu, 0.7):.4f}  " + vals)
 
 
 if __name__ == "__main__":
     es_vs_var()
+    normal_vs_t()
     joint_exceedance()
