@@ -1,0 +1,561 @@
+---
+title: "Week 01 — Univariate Statistics"
+subtitle: "FinTech 545 --- Quantitative Risk Management"
+author: "Dominic Pazzula"
+format:
+  pdf:
+    output-file: "Week 01 - Univariate Statistics.pdf"
+    documentclass: scrartcl
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fig-pos: 'H'
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{etoolbox}
+        % Tables here are all short. Without this, longtable can place its
+        % header at the bottom of a page, break, and repeat the header on the
+        % next page with no rows under it. Require room for a few lines first.
+        \AtBeginEnvironment{longtable}{\Needspace*{8\baselineskip}}
+    number-sections: true
+    toc: true
+    toc-depth: 2
+  html:
+    output-file: "Week 01 - Univariate Statistics.html"
+    toc: true
+    html-math-method: katex
+---
+
+# Risk Management and the Distribution of Outcomes
+
+Risk management is the process of understanding and managing, to an acceptable level, the risk of loss to a company's earnings and balance sheet.
+
+As Wikipedia puts it:
+
+> Risk management is the identification, evaluation, and prioritization of risks followed by coordinated and economical application of resources to minimize, monitor, and control the probability or impact of unfortunate events or to maximize the realization of opportunities.
+
+We are concerned with the distribution of outcomes. We are NOT only interested in the expected, or forecasted, outcome.
+
+That distinction is the whole course. Two strategies with the same 8% expected return are the same investment to a portfolio manager who looks only at the mean, and they are not the same investment at all if one of them loses 60% once a decade and the other never loses more than 10%. The forecast is a single number. Everything the single number does not say is what we spend the semester estimating.
+
+## Types of Risk
+
+- Market Risk
+- Credit Risk
+- Liquidity Risk
+- Operational Risk
+- Business Risk
+
+This course is about market risk, with an extended detour through the simulation and estimation machinery that market risk requires. The tools transfer to the other four. A default model, an operational loss model, and a return model all come down to the same two questions -- what is the distribution, and what is in the tail.
+
+## Working with Distributions
+
+To manage risks, we need to understand the distribution of outcomes.
+
+We almost never observe the distribution. What we observe is a finite sample drawn from it, and what we do with that sample is choose a parametric family to stand in for the distribution and then estimate the parameters of the family. Two things can go wrong, and in practice both of them do:
+
+1. The family is wrong. Returns are not normal, and we assume normal anyway because the algebra closes.
+2. The family is right and the parameters are estimated badly. A variance estimated from 30 observations is not the variance.
+
+Weeks 01 through 03 build the machinery for describing and estimating a distribution. Week 04 turns that machinery into a risk number.
+
+# Describing a Distribution
+
+Three functions describe a univariate distribution. Each is a transform of the others, and in practice we move between them constantly.
+
+## Probability Density Function
+
+**Probability Density Function**, PDF(x), measures the relative likelihood of the value of a random variable, $x$.
+
+![A probability density function](figures/normal-pdf.png){#fig-pdf width=85%}
+
+The density is not a probability. For a continuous random variable the probability of landing on any single point is zero, and the density itself is free to exceed 1 -- a normal with $\sigma = 0.1$ has a peak density near 4, which would be an impossible probability. Only the area under @fig-pdf is a probability.
+
+## Cumulative Distribution Function
+
+**Cumulative Density Function**, CDF(x), measures the probability a value of the random variable $X$ will be less than or equal to some value $x$:
+
+$$
+F_X(x) = P(X \leq x)
+$$
+
+$F_X(x)$ is the CDF. $f_X(x)$ is the PDF. The CDF is the integral of the PDF over the range. Where the support is unbounded below, as it is for the density in @fig-pdf, the integral runs from negative infinity:
+
+$$
+F_X(x) = \int_{-\infty}^{x} f_X(t)\, dt
+$$
+
+![A cumulative distribution function](figures/normal-cdf.png){#fig-cdf width=85%}
+
+@fig-cdf shows the two properties that matter. The CDF never decreases, and it runs from 0 to 1. Both follow from the density being non-negative and integrating to one.
+
+If we are interested in the probability of a value falling in an interval:
+
+$$
+P(a < X \leq b) = \int_a^b f_X(t)\, dt = \int_{-\infty}^{b} f_X(t)\, dt - \int_{-\infty}^{a} f_X(t)\, dt = F_X(b) - F_X(a)
+$$
+
+Differencing the CDF is how an interval probability is computed in practice, because the CDF is the function every statistical package implements and the integral in the middle of that expression is not something anyone evaluates directly.
+
+## Quantile Function
+
+**Quantile Function** is the inverse of the CDF. It is the value of $x$ such that $F(x) = p$:
+
+$$
+F^{-1}(p)
+$$
+
+This is useful in numerous ways, starting with hypothesis testing.
+
+For example, given a distribution of $X$, what is the range of $X$ such that 95% of random values fall inside the range?
+
+$$
+\left( F^{-1}(0.025),\ F^{-1}(0.975) \right)
+$$
+
+The quantile function is also the definition of Value at Risk. A 5% VaR is $-F^{-1}(0.05)$ applied to the P&L distribution, and nothing more than that. We spend most of Week 04 on that one line, because every difficult part of a VaR calculation lies in getting $F$ right and none of it lies in inverting a function we already know how to invert.
+
+# Moments
+
+**Distribution moments** describe the shape of the PDF. Generally:
+
+$$
+\mu_n = \int_{-\infty}^{\infty} (x - c)^n f(x)\, dx = E\left[ (x - c)^n \right]
+$$
+
+Where $E$ is the expectation operator. Adjust the integral range for the support of the distribution.
+
+In statistics when talking about the first moment, we set $c = 0$. The first moment is the mean, usually denoted $\mu$. For the higher moments we set $c = \mu$, which makes them central moments -- measured around the mean rather than around the origin.
+
+## The First Four Moments
+
+The first 4 moments of a distribution are the most used, but do not, by themselves, define a distribution.
+
+| # | Name | What it measures |
+|--:|:--|:--|
+| 1 | Mean | Expected value |
+| 2 | Variance ($\sigma^2$) | Dispersion around the mean |
+| 3 | Skewness | Asymmetry |
+| 4 | Kurtosis | Fatness of the tails |
+
+: The first four moments {#tbl-moments tbl-colwidths="[8,27,65]"}
+
+Two points on @tbl-moments. Positive skew distributions skew to the right, with mean > median. Negative skew distributions skew to the left, with mean < median.
+
+The qualifier above @tbl-moments is not a technicality. Two distributions can agree on all four of these moments and still disagree substantially about the probability of a 5% loss, which is the only number a risk committee is going to ask about. Matching moments is a weak form of matching distributions.
+
+## Standardized Skewness and Kurtosis
+
+Skewness and kurtosis as generally reported are standardized values:
+
+$$
+\hat{\mu}_3 = E\left[ \left( \frac{X - \mu}{\sigma} \right)^3 \right] = \frac{\mu_3}{\sigma^3}
+$$
+
+$$
+\hat{\mu}_4 = E\left[ \left( \frac{X - \mu}{\sigma} \right)^4 \right] - 3 = \frac{\mu_4}{\sigma^4} - 3
+$$
+
+Standardizing makes the values scale-free, so a daily return series and an annual return series with the same shape report the same skewness and the same kurtosis regardless of how large the underlying moves are.
+
+We subtract 3 from the kurtosis to report "excess" kurtosis. The kurtosis of the normal distribution is 3 -- excess kurtosis is kurtosis in excess of the normal distribution. Excess kurtosis of zero means normal-like tails. Positive excess kurtosis means fatter tails than the normal, and equity returns have plenty of it.
+
+Check the convention on any kurtosis number you are handed, because some packages report raw kurtosis and some report excess kurtosis, and a difference of 3 is more than large enough to turn a fat-tailed series into a normal-looking one.
+
+## Existence {#sec-existence}
+
+Moments can be infinite or undefined.
+
+This is not a pathological case invented for a textbook. Whether a moment exists depends on how fast the density decays in the tail, and a tail that decays slowly enough will make the defining integral diverge. A distribution can have a finite mean and an infinite variance, or a finite variance and an infinite kurtosis, and which of those happens is a property of the family and its parameters.
+
+A distribution with infinite variance has no standard deviation to report. The sample estimate will still come back as a finite number, and that number will grow as you add observations, which is exactly the behavior that makes the problem hard to notice.
+
+@sec-t covers the distribution where this matters most for us. Fitted to daily equity returns, it routinely lands in the range where the kurtosis does not exist.
+
+# Estimating Moments from a Sample
+
+Estimation of moments from samples is messy.
+
+The population moments above are integrals against a density we do not have, so every estimator below replaces that integral with a sample average and inherits a bias that depends on the sample size.
+
+## Mean
+
+$$
+\hat{\mu}_1 = E[X] = \frac{1}{n} \sum_{i=1}^{n} x_i
+$$
+
+The sample mean is unbiased for any distribution with a finite first moment. It is also the estimator with the worst signal to noise ratio in finance, because the quantity we are trying to measure is small and the noise around it is not.
+
+Take a stock with a true expected return of 8% per year and a volatility of 20% per year. The standard error of the sample mean after $n$ years of data is $\sigma / \sqrt{n}$, so ten years of history gives $20\% / \sqrt{10} = 6.3\%$. A two standard error interval around the estimate runs from $-4.6\%$ to $20.6\%$. Ten years of data cannot establish that the stock has a positive expected return at all.
+
+The same ten years of daily data pins the volatility down to within a few tenths of a percentage point. The asymmetry is not a small-sample accident. More frequent sampling improves a variance estimate and does nothing for a mean estimate, because the mean depends only on the first and last price in the window. We come back to that in Week 07 when expected returns enter portfolio construction.
+
+## Variance
+
+Variance -- in small samples, dividing by $n$ leads to a biased estimator.
+
+$$
+\hat{\mu}_2 = E\left[ (X - \hat{\mu}_1)^2 \right] = \frac{1}{n-1} \sum_{i=1}^{n} (x_i - \hat{\mu}_1)^2
+$$
+
+The correction is a degrees of freedom argument. We have already used the data once to estimate $\hat{\mu}_1$, and the sample mean sits closer to the data than the true $\mu$ does, so the deviations $x_i - \hat{\mu}_1$ are on average too small. Dividing by $n-1$ instead of $n$ compensates for that exactly.
+
+As the sample size grows, the unbiased estimator above converges to the biased estimator. At $n = 30$ the two differ by 3%. At $n = 250$ they differ by 0.4%.
+
+## Skewness and Kurtosis
+
+Unbiased estimators for skew and kurtosis are more complicated. See <https://modelingwithdata.org/pdfs/moments.pdf> for mathematical derivations of estimators.
+
+For reference, the unnormalized skew is:
+
+$$
+\hat{\mu}_3 = E\left[ (X - \hat{\mu}_1)^3 \right] = \frac{n}{(n-1)(n-2)} \sum_{i=1}^{n} (x_i - \hat{\mu}_1)^3
+$$
+
+Normalize to the standardized form by dividing by $\sigma^3$.
+
+The unnormalized kurtosis is:
+
+$$
+\hat{\mu}_4 = E\left[ (X - \hat{\mu}_1)^4 \right] = \frac{n^2}{(n-1)^3 (n^2 - 3n + 3)} \left[ \left( n(n-1)^2 + (6n-9) \right) K_{\bar{x}}(x) - n(6n-9)\, \sigma_{\bar{x}}^4(x) \right]
+$$
+
+Where:
+
+- $K_{\bar{x}}(x)$ is the biased estimator for kurtosis (see link for formula)
+- $\sigma_{\bar{x}}^4(x)$ is the square of the biased estimator for variance
+
+Both corrections are a factor of $n$ over a product of $(n-1)$ terms, so both go to one as the sample grows and both are far enough from one to matter at the sample sizes we actually work with.
+
+## What Statistical Packages Return
+
+Statistical packages may or may not provide the bias corrected estimates.
+
+In Julia, the 3rd and 4th moment estimators are presented as the 3rd and 4th central moment population estimators. The skew metric can be easily adjusted. The kurtosis estimator is more involved, as it depends on the population kurtosis, the population variance, and the kurtosis of the mean estimator.
+
+In general, the differences are minor. Do not assume that, though -- check the documentation of whatever package you are using, and where the documentation does not say which convention it follows, test the function against a distribution whose moments you already know. @sec-biastest does exactly that for the Julia kurtosis function.
+
+# Common Distributions
+
+Four distributions cover most of what we do -- the normal because it is tractable, the lognormal because prices cannot go negative, the Student's t because returns have fatter tails than the normal admits, and the normal inverse Gaussian because returns are also skewed.
+
+## Normal Distribution
+
+**Normal or Gaussian Distribution** is commonly used in statistics. Properties of the normal distribution make it tractable to many calculations. Further, through the Central Limit Theorem, it is the limiting distribution of sample means.
+
+Notation:
+
+$$
+X \sim N(\mu, \sigma^2)
+$$
+
+| Statistic | Value |
+|:--|:--|
+| Support | $x \in (-\infty, \infty)$ |
+| Mean | $\mu$ |
+| Median | $\mu$ |
+| Mode | $\mu$ |
+| Variance | $\sigma^2$ |
+| Skewness | 0 |
+| Excess Kurtosis | 0 |
+
+: Properties of the normal distribution {#tbl-normal}
+
+PDF:
+
+$$
+f(x) = \frac{1}{\sigma \sqrt{2\pi}} e^{-\frac{1}{2} \left( \frac{x - \mu}{\sigma} \right)^2}
+$$
+
+If we set $\mu = 0$ and $\sigma = 1$, we call this the Standard Normal. Standard normals are often notated $Z$. The CDF for the standard normal is:
+
+$$
+\Phi(x) = \frac{1}{\sqrt{2\pi}} \int_{-\infty}^{x} e^{-\frac{t^2}{2}}\, dt
+$$
+
+No analytic form exists for the value of the integral, therefore numerical approximations are used. The same applies for the quantile function. Every statistical package ships an implementation of both, and the implementations agree to far more digits than any risk number ever needs.
+
+## Linear Functions of Normals
+
+A property of the normal distribution is that any linear function of a normal variable is also normally distributed:
+
+$$
+Y = A + BX
+$$
+
+$$
+Y \sim N(A + B\mu,\ B^2 \sigma^2)
+$$
+
+Given that, we can transform any normal variable into a standard normal:
+
+$$
+Z = \frac{X - \mu}{\sigma}
+$$
+
+The CDF of any normal is then:
+
+$$
+\Phi\left( \frac{X - \mu}{\sigma} \right)
+$$
+
+One standard normal CDF implementation therefore serves every normal distribution, which is the practical reason the standardization shows up in nearly every formula we write.
+
+A linear function of multiple random normal variables is also normally distributed. For a 2 variable case, where $x$ and $y$ are random normals:
+
+$$
+Z = Ax + By + c
+$$
+
+$$
+Z \sim N(\mu_z, \sigma_z^2)
+$$
+
+$$
+\mu_z = A\mu_x + B\mu_y + c
+$$
+
+$$
+\sigma_z^2 = A^2 \sigma_x^2 + B^2 \sigma_y^2 + 2AB\, \mathrm{cov}_{x,y}
+$$
+
+The cross term is where portfolio risk lives. A portfolio is a linear function of its holdings, so the variance of a portfolio of normals is the expression above with more terms. We cover the covariance and the general $N$ variable case next week.
+
+## Lognormal Distribution
+
+**Lognormal Distribution** -- is the transform of a random normal, $X$. The exponential of $X$ is distributed lognormal:
+
+$$
+x \sim N(\mu, \sigma^2)
+$$
+
+$$
+Y = e^{x}, \quad Y \sim \ln(\mu, \sigma^2)
+$$
+
+| Statistic | Value |
+|:--|:--|
+| Support | $x \in (0, \infty)$ |
+| Mean | $e^{\mu + \frac{\sigma^2}{2}}$ |
+| Median | $e^{\mu}$ |
+| Mode | $e^{\mu - \sigma^2}$ |
+| Variance | $\left( e^{\sigma^2} - 1 \right) e^{2\mu + \sigma^2}$ |
+| Skewness | $\left( e^{\sigma^2} + 2 \right) \sqrt{e^{\sigma^2} - 1}$ |
+| Excess Kurtosis | $e^{4\sigma^2} + 2e^{3\sigma^2} + 3e^{2\sigma^2} - 6$ |
+
+: Properties of the lognormal distribution {#tbl-lognormal}
+
+**NOTE: The mean and variance of the distribution are not** $\mu$ **and** $\sigma^2$.
+
+Read @tbl-lognormal against @tbl-normal. The lognormal has positive support and, for every $\sigma > 0$, positive skew and positive excess kurtosis. A price cannot go negative and a long series of small multiplicative shocks compounds into a right-skewed distribution, so the lognormal is the natural model for a price where the normal is the natural model for a return.
+
+PDF:
+
+$$
+f(x) = \frac{1}{x \sigma \sqrt{2\pi}} e^{-\frac{\left( \ln(x) - \mu \right)^2}{2\sigma^2}}
+$$
+
+Because we can transform the lognormal distribution into a normal distribution with the natural logarithm function, we can use the standard normal CDF function, $\Phi(x)$:
+
+$$
+F(x) = \Phi\left( \frac{\ln(x) - \mu}{\sigma} \right)
+$$
+
+The same transform is why we work in log returns. If the price is lognormal then the log return is normal, and the normal is the distribution we have closed-form tools for. Week 04 covers what that convenience costs when the returns have to be aggregated across assets.
+
+## Student's t Distribution {#sec-t}
+
+**Student's-t Distribution** or t distribution is used for hypothesis testing. Specifically it is the distribution of the sample mean when the variance is unknown. As the number of observations increases, the Student's-t distribution converges to the normal distribution.
+
+The t distribution has 3 parameters:
+
+1. $\nu$ -- degrees of freedom
+2. $\mu$ -- location
+3. $\sigma$ -- scale
+
+Usually only the 1st parameter is used, as the standardized T ($\mu = 0$ and $\sigma = 1$) is used for hypothesis testing. I will reference the standardized distribution as T and the generalized as t. Like the normal, the standardized T can be transformed with the location and scale:
+
+$$
+X = \mu + \sigma T
+$$
+
+Notation:
+
+$$
+X \sim t\left( \nu,\ (\mu, \sigma) \right)
+$$
+
+| Statistic | Value |
+|:--|:--|
+| Support | $x \in (-\infty, \infty)$ |
+| Mean | $\mu$ if $\nu > 1$, otherwise undefined |
+| Median | $\mu$ |
+| Mode | $\mu$ |
+| Variance | $\sigma^2 \frac{\nu}{\nu - 2}$ if $\nu > 2$, $\infty$ if $1 < \nu \leq 2$, otherwise undefined |
+| Skewness | 0 if $\nu > 3$, otherwise undefined |
+| Excess Kurtosis | $\frac{6}{\nu - 4}$ if $\nu > 4$, $\infty$ if $2 < \nu \leq 4$, otherwise undefined |
+
+: Properties of the Student's t distribution {#tbl-t}
+
+Note that $\sigma$ ($\sigma^2$) is not the standard deviation (variance). The variance row in @tbl-t carries a factor of $\nu / (\nu - 2)$, which is where the confusion usually starts.
+
+PDF:
+
+$$
+f(x) = \frac{\Gamma\left( \frac{\nu + 1}{2} \right)}{\Gamma\left( \frac{\nu}{2} \right) \sigma \sqrt{\pi \nu}} \left( 1 + \frac{1}{\nu} \left( \frac{x - \mu}{\sigma} \right)^2 \right)^{-\frac{\nu+1}{2}}
+$$
+
+The t distribution has $\nu - 1$ finite moments, and:
+
+$$
+\lim_{\nu \to \infty} t(\nu, \mu, \sigma) = N(\mu, \sigma^2)
+$$
+
+The T distribution is defined as:
+
+$$
+T = Z \sqrt{\frac{\nu}{V}}
+$$
+
+Where:
+
+1. $Z \sim N(0,1)$ -- the standard normal
+2. $V \sim \chi^2(\nu)$ -- chi-square distribution with $\nu$ degrees of freedom (independently study the chi-square)
+3. $Z$ and $V$ are independent
+
+The division by a random $V$ is the source of the fat tails. A normal draw is being scaled by a random quantity that is occasionally close to zero, and those occasional small divisors produce the occasional very large outcome that a fixed $\sigma$ would never generate.
+
+That is also why we use the t for returns and not only for hypothesis testing. Daily equity returns fit a t with $\nu$ somewhere between 3 and 6 considerably better than they fit any normal, and Week 05 fits t distributions to real return series and then uses them as the marginals inside a copula.
+
+## Normal Inverse Gaussian Distribution
+
+**Normal Inverse Gaussian Distribution**, NIG, is a four parameter family that carries both skew and excess kurtosis. Ole Barndorff-Nielsen introduced it in 1977 as a member of the generalized hyperbolic family, and published its application to financial return series in 1997.
+
+The t gives us fat tails and nothing else. Return series are also asymmetric, and a symmetric family cannot represent an asymmetric sample no matter how it is parameterized.
+
+The four parameters are:
+
+1. $\alpha$ -- tail heaviness. Large $\alpha$ gives light tails
+2. $\beta$ -- asymmetry, with $0 \leq |\beta| < \alpha$. $\beta = 0$ is symmetric
+3. $\delta$ -- scale, $\delta > 0$
+4. $\mu$ -- location
+
+Throughout, write:
+
+$$
+\gamma = \sqrt{\alpha^2 - \beta^2}
+$$
+
+Notation:
+
+$$
+X \sim \mathrm{NIG}(\alpha, \beta, \delta, \mu)
+$$
+
+| Statistic | Value |
+|:--|:--|
+| Support | $x \in (-\infty, \infty)$ |
+| Mean | $\mu + \dfrac{\delta \beta}{\gamma}$ |
+| Median | No closed form |
+| Mode | No closed form |
+| Variance | $\dfrac{\delta \alpha^2}{\gamma^3}$ |
+| Skewness | $\dfrac{3\beta}{\alpha \sqrt{\delta \gamma}}$ |
+| Excess Kurtosis | $\dfrac{3}{\delta \gamma} \left( 1 + \dfrac{4\beta^2}{\alpha^2} \right)$ |
+
+: Properties of the normal inverse Gaussian distribution {#tbl-nig}
+
+Note the sign of the skewness in @tbl-nig. It follows the sign of $\beta$, and $\delta\gamma$ appears in the denominator of both the skewness and the excess kurtosis. Small $\delta\gamma$ means a sharply peaked distribution with heavy tails.
+
+PDF:
+
+$$
+f(x) = \frac{\alpha \delta}{\pi} \frac{K_1\left( \alpha \sqrt{\delta^2 + (x - \mu)^2} \right)}{\sqrt{\delta^2 + (x - \mu)^2}} e^{\delta \gamma + \beta (x - \mu)}
+$$
+
+Where $K_1$ is the modified Bessel function of the second kind of order 1. There is no closed form for the CDF or the quantile function, and both are evaluated numerically.
+
+The density looks worse than it is to work with. Three properties make it practical.
+
+**Mixture representation.** The NIG is a normal whose variance is itself random:
+
+$$
+X = \mu + \beta Z + \sqrt{Z}\, W, \quad W \sim N(0,1), \quad Z \sim \mathrm{IG}(\delta, \gamma)
+$$
+
+$\mathrm{IG}$ is the inverse Gaussian distribution, which is where the name comes from. Compare this to the construction of the T in @sec-t. Both are normal draws rescaled by an independent random quantity, and in both cases the random rescaling is what produces the fat tails. The difference is the $\beta Z$ term, which shifts the mean by an amount that depends on the draw and produces the skew. Simulating from the NIG is therefore two draws and some arithmetic, which is what we need in Week 03.
+
+**Closure under convolution.** If $X_1$ and $X_2$ are independent NIG with the same $\alpha$ and $\beta$, then:
+
+$$
+X_1 + X_2 \sim \mathrm{NIG}(\alpha, \beta, \delta_1 + \delta_2, \mu_1 + \mu_2)
+$$
+
+A sum of daily NIG returns is a weekly NIG return in the same family. The normal is the only other distribution we have covered with that property, and the t does not have it. Week 04 covers scaling risk measures to horizons longer than one day, and closure under convolution is the property that makes that scaling honest rather than approximate.
+
+**All moments are finite.** The tails decay as $|x|^{-3/2} e^{-\alpha |x| + \beta x}$, which is exponential damping rather than a power law. The NIG is fat tailed relative to the normal and thin tailed relative to the t. Every moment exists, so the concerns in @sec-existence do not apply.
+
+That last property cuts both ways. A series whose tail is genuinely power law will be fit badly by the NIG, and the fit will look fine in the body of the distribution where most of the data is. My opinion: on daily equity returns the NIG is the better default because the skew is real and a symmetric family cannot represent it, but compare the two fits in the tail before committing.
+
+As $\alpha$ grows with $\delta / \alpha$ held fixed, the excess kurtosis $3 / (\delta\gamma)$ goes to zero and the NIG converges to a normal. Every family in this section has the normal as a limiting case.
+
+# Choosing a Distribution from the Sample Shape
+
+The third and fourth moments are the cheapest diagnostic we have. Compute them on the sample before choosing any of the four families above to fit, because together they rule out most of the candidates in a single pass.
+
+| Sample skew | Sample excess kurtosis | Candidate families |
+|:--|:--|:--|
+| $\approx 0$ | $\approx 0$ | Normal |
+| $\approx 0$ | $> 0$ | Student's t, symmetric NIG |
+| $\neq 0$ | $> 0$ | Normal inverse Gaussian, skewed t, generalized hyperbolic |
+| $> 0$ | $> 0$, positive support | Lognormal |
+
+: Sample shape and the families it points to {#tbl-shape}
+
+@tbl-shape is a filter, not a decision. It tells us which families can reproduce the shape we observe, and a family that cannot reproduce a skew of $-0.6$ is not going to become able to after we fit it.
+
+Daily equity index returns have negative skew and large positive excess kurtosis. Big down days are larger and more frequent than big up days. The normal has zero for both, so the normal cannot represent either feature at any choice of $\mu$ and $\sigma$, and no amount of fitting will change that. The symmetric Student's t handles the kurtosis and leaves the skew on the table. The normal inverse Gaussian handles both, which is the reason it is in these notes at all.
+
+Two constraints on the pair are worth knowing. Skewness and kurtosis are not free of each other -- for any distribution, kurtosis $\geq$ skewness$^2 + 1$, so an excess kurtosis below $\hat{\mu}_3^2 - 2$ is not merely unusual, it is impossible and indicates an error in the calculation. And the four moments do not pin down a family. Several of the candidates in @tbl-shape can be tuned to match any admissible pair, and choosing between them requires a likelihood comparison or a look at the tail itself.
+
+My opinion: treat the sample kurtosis as a signal about direction and not as a number. It is an average of fourth powers, so on a few hundred observations a single large move can move it by several units, and the estimate is biased downward in small samples. A sample excess kurtosis of 4 tells us the tails are fat. It does not tell us they are twice as fat as a series that came in at 2.
+
+# Hypothesis Testing
+
+## The t Statistic
+
+As a test statistic:
+
+$$
+T = \left( \bar{X} - \mu_0 \right) \frac{\sqrt{n}}{S_n}
+$$
+
+Where:
+
+1. $\bar{X}$ is the sample mean
+2. $S_n$ is the sample standard deviation
+3. $n$ is the number of samples
+4. $\mu_0$ is the hypothesis value
+5. $T \sim T(n-1)$ -- standardized T with $\nu = n - 1$
+
+Recognize this is standardizing the value of $\bar{X}$ with a hypothesized mean and a calculated variance. The degrees of freedom are $n-1$ for the same reason the variance estimator divides by $n-1$, which is that one degree of freedom was already spent estimating the mean.
+
+## Testing an Estimator for Bias {#sec-biastest}
+
+Example: test if the kurtosis calculated by your distribution package is biased.
+
+Steps:
+
+1. Sample 100,000 standardized random normal values.
+2. Calculate the kurtosis.
+3. Sample the kurtosis by repeating steps 1 and 2 100 times.
+4. Calculate the mean kurtosis $\bar{k}$ and standard deviation $S_k$.
+5. Calculate the T statistic ($\mu_0 = 0$).
+6. Use the CDF function to find the p-value of the absolute value of the statistic and subtract from 1. Multiply the value by 2 because this is a 2 sided test.
+7. If the value is lower than your threshold (typically 5%), then you reject the hypothesis that the kurtosis function is unbiased.
+
+Alternatively, use a T test function in your statistics package. `week1.jl` does it both ways and checks that the answers agree.
+
+Run that a few times. How confident are you in the result? Try increasing the number of samples.
+
+We know in Julia the kurtosis function should be biased. If it is failing to reject the null hypothesis, why and what can we change?

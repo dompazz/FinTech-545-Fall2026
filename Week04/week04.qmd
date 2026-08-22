@@ -1,0 +1,534 @@
+---
+title: "Week 04 — Returns and Value at Risk"
+subtitle: "FinTech 545 --- Quantitative Risk Management"
+author: "Dominic Pazzula"
+format:
+  pdf:
+    output-file: "Week 04 - Returns and Value at Risk.pdf"
+    documentclass: scrartcl
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fig-pos: 'H'
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{etoolbox}
+        % Tables here are all short. Without this, longtable can place its
+        % header at the bottom of a page, break, and repeat the header on the
+        % next page with no rows under it. Require room for a few lines first.
+        \AtBeginEnvironment{longtable}{\Needspace*{8\baselineskip}}
+    number-sections: true
+    toc: true
+    toc-depth: 2
+  html:
+    output-file: "Week 04 - Returns and Value at Risk.html"
+    toc: true
+    html-math-method: katex
+---
+
+# Financial Data and Returns
+
+Financial data is often quoted as prices. Prices are non-stationary, meaning our assumptions for modeling do not hold. We have to transform prices into a series that is stationary and suitable for modeling.
+
+Everything in Weeks 01 through 03 assumed a series with a stable mean and variance. A price series has neither. A stock at \$40 last year and \$90 today has no mean to estimate, and the variance of its level grows with the length of the sample. Returns are the transform that makes the previous three weeks apply.
+
+Fundamentally, today's price is some function of yesterday's price, plus whatever new information arrived today. Prices are generally assumed to be positive.
+
+## Three Return Systems
+
+3 classical ways to view this:
+
+1. Classical Brownian Motion
+
+$$
+P_t = P_{t-1} + r_t
+$$
+
+2. Arithmetic Return System
+
+$$
+P_t = P_{t-1}\left( 1 + r_t \right)
+$$
+
+3. Log Return or Geometric Brownian Motion
+
+$$
+P_t = P_{t-1} e^{r_t}
+$$
+
+| System | Price process | Additive across | Prices stay positive |
+|:--|:--|:--|:--|
+| Classical Brownian | $P_t = P_{t-1} + r_t$ | assets and time | no |
+| Arithmetic | $P_t = P_{t-1}(1+r_t)$ | assets | only if $r_t > -1$ |
+| Geometric | $P_t = P_{t-1}e^{r_t}$ | time | yes |
+
+: The three return systems {#tbl-returns}
+
+The third column of @tbl-returns is why we keep all three. No system is additive both across assets and across time, so the choice depends on which direction the sum runs.
+
+Classical Brownian Motion is the least used of the 3. There is not a good way to assure prices are greater than 0. However this is used in commodity applications where we are often concerned with the price between two physical locations (called the basis). Basis can and often does change sign.
+
+## Arithmetic Returns
+
+Arithmetic returns are often used in portfolio management. If I have a portfolio of assets $X$ with returns $r$, and I hold them with weight $w$, then the total return on my portfolio is simply the dot product of $r$ and $w$.
+
+Let:
+
+- $h_i$ be the absolute holding of asset $i$ in the portfolio
+- $w_{i,t}$ be the weight of asset $i$ at time $t$
+- $PV_t$ be the portfolio value at time $t$
+- $P_{i,t}$ be the price of asset $i$ at time $t$
+- $R_t$ be the portfolio return at time $t$
+- $r_{i,t}$ be the asset $i$ return at time $t$
+
+The value of the portfolio at time $t$ is:
+
+$$
+PV_t = \sum_{i=1}^{n} h_i P_{i,t} \quad \text{and} \quad w_{i,t} = \frac{h_i P_{i,t}}{PV_t} \Rightarrow \sum_{i=1}^{n} w_{i,t} = 1
+$$
+
+$$
+PV_{t+1} = \sum_{i=1}^{n} h_i P_{i,t}\left( 1 + r_{i,t} \right) = PV_t \left( 1 + R_t \right)
+$$
+
+$$
+PV_t + \sum_{i=1}^{n} h_i P_{i,t} r_{i,t} = PV_t + PV_t R_t \Rightarrow \sum_{i=1}^{n} w_{i,t} r_{i,t} = R_t
+$$
+
+That last line is the reason arithmetic returns exist. A portfolio return is a weighted sum of asset returns, exactly, with no approximation. Fact 7 from Week 02 then gives the portfolio variance directly.
+
+Prices based on arithmetic returns can still be negative if the lower bound of the return is less than $-1$. Often we assume normal returns, but with a low enough volatility that this boundary rarely, if ever, comes into play.
+
+You will see arithmetic returns used in the literature looking at the cross section of returns, where the additive property inside the same time period makes the math easy.
+
+## Geometric Returns
+
+Geometric Brownian Motion is often used when looking at returns through time. Here returns are additive with time.
+
+$$
+P_{t+1} = P_t e^{r_t} \Rightarrow P_T = P_0 e^{\sum_{t=0}^{T-1} r_t}
+$$
+
+If we assume $r_t \sim N\left( \mu, \sigma^2 \right)$ then $P_{t+1} \sim LN\left( \mu + \ln\left( P_t \right), \sigma^2 \right)$.
+
+$$
+\ln\left( P_{t+1} \right) = \ln\left( P_t \right) + r_t
+$$
+
+$$
+\ln\left( P_{t+1} \right) \sim N\left( \mu + \ln\left( P_t \right), \sigma^2 \right) \Rightarrow P_{t+1} \sim LN\left( \mu + \ln\left( P_t \right), \sigma^2 \right)
+$$
+
+This is the Week 01 lognormal, arrived at from the process rather than from the density. Taking the log converts a multiplicative price process into an additive one, and the normal is closed under addition, which is the only reason the $T$ period distribution is available in closed form. @sec-multiday uses that directly.
+
+## Total Return Series
+
+In practice, assets distribute cash or undergo changes that make the underlying price time series not indicative of total return. Some common occurrences:
+
+1. Cash distributions
+    a. Dividends
+    b. Coupon payments
+2. Stock splits
+3. Spin outs
+
+This is addressed by creating a total return price series. It is assumed that any proceeds are reinvested back into the security.
+
+The method for doing this is straightforward:
+
+1. Calculate a price return (usually arithmetic) at each time period.
+2. In the time periods where events happen, adjust the return so that it reflects the actual return an investor would have experienced.
+3. Starting with today's price, use the returns to calculate the price series back in time.
+
+If you are maintaining a database of these total return prices, each day you calculate the total return for the security and, if there was an event, update the previous prices in the series. Alternatively you can just maintain the total return values.
+
+Note what step 3 implies. The historical levels of a total return series are not the prices anyone ever traded at, and they change every time a new dividend is paid. Only the returns are stable.
+
+Most sources of data will provide either a price series, a total return price series, or both. When pulling data from Yahoo! Finance, the "ADJ CLOSE" column is the total return price series.
+
+Getting this wrong is a common and expensive mistake. A dividend paying stock analyzed on price alone shows a loss on every ex-dividend date, which looks like a series of small negative shocks that never reverse.
+
+# Value at Risk {#sec-var}
+
+Risk is the possibility of financial loss. It is quantified in numerous ways.
+
+In portfolio management, we often see the standard deviation of returns as the risk measure. We will be using this when we talk about portfolio management in a few weeks.
+
+Value at Risk, or VaR, is a widely used metric. It attempts to answer, under normal market conditions, what is the minimum we can expect to lose on an $\alpha$% bad day.
+
+VaR is not the maximum loss. It is the minimum loss on a "normal" $\alpha$% bad day. Most models look at recent history to calibrate market movement. Regimes can shift, and what was normal yesterday is abnormal today. Losses in a market that is not normal can be an order of magnitude larger than VaR.
+
+Said another way, markets are hard to model and extreme events happen with a higher probability than would be assumed from most modeling.
+
+Mathematically, VaR is the $\alpha$ percentile on the profit and loss distribution.
+
+![VaR as a percentile of the profit and loss distribution](figures/var-distribution.png){#fig-var width=100%}
+
+We negate the value of VaR so that a positive number is a loss and a negative number is a gain.
+
+$$
+VaR_{\alpha}(x) = -F_x^{-1}(\alpha)
+$$
+
+That is the Week 01 quantile function with a minus sign in front of it. Every method in the rest of this week is a different way of getting at $F$.
+
+## Two Reporting Conventions
+
+VaR is reported in 2 ways in practice. It is always helpful to ask which is intended.
+
+1. Absolute value on the profit and loss distribution. In @fig-var, VaR = 8.
+2. The relative difference from the mean expected value. The mean in @fig-var is about 1, so VaR = 9.
+
+In risk management, we mostly care about the loss, so the first definition is sufficient.
+
+If we are comparing 2 portfolios and we are interested in both their expected return (profit) as well as their level of risk (VaR), then the 2nd definition is generally used.
+
+At a one day horizon the two agree to within rounding, because the mean daily return is small next to the daily standard deviation. At a one year horizon they do not, and the gap is the entire expected return of the portfolio.
+
+# Criticisms of VaR
+
+The largest criticism of VaR has to do with the fact that models have a hard time describing price movements in finance. VaR is the minimum loss under normal markets. Managing risk solely to VaR leads investors into a false sense of security.
+
+VaR is not subadditive when the distribution is non-elliptical.
+
+## Subadditivity
+
+A subadditive measure is
+
+$$
+q(P_1) + q(P_2) \geq q(P_1 + P_2)
+$$
+
+Standard deviation (and variance) are subadditive. However, not all distribution percentiles are subadditive, meaning that VaR is not.
+
+Why does that matter? Risk should be subadditive. It is hard to come up with a case where investing in 1 asset makes the 2nd asset more risky. Diversification, at worst, has no effect when things are perfectly correlated.
+
+Example. Standard deviation is subadditive. Imagine you have 2 assets that are independent. They each have a standard deviation of 1 and we assume multivariate normality. We hold the assets in equal weights.
+
+$$
+q(0.5 P_1 + 0.5 P_2) = \sqrt{0.5^2 \cdot 1 + 0.5^2 \cdot 1} = 0.5\sqrt{2} = 0.707
+$$
+
+$$
+q(0.5 P_1) = q(0.5 P_2) = 0.5
+$$
+
+$$
+q(0.5 P_1) + q(0.5 P_2) = 1 > 0.707
+$$
+
+If we assume multivariate normality, then VaR is just a multiple of standard deviation:
+
+$$
+\alpha = 0.05 \Rightarrow VaR \approx 1.65\, \sigma_P
+$$
+
+Under normality VaR inherits subadditivity from the standard deviation it is a multiple of. The problem is not VaR itself. It is VaR applied to a distribution that is not elliptical.
+
+## A Counterexample
+
+Break the normality assumption. Imagine 2 bonds that are independent. Each costs \$90 and will pay \$100 in the next time period, if they do not default. Each has a 4% chance of default. You have \$180. You can buy 2 of either bond, or 1 of both.
+
+If we let $\alpha = 0.05$, then in the 5% worst case scenario each bond will not default -- default happens in the 4% worst case scenario.
+
+If I buy 2 of a single bond then VaR = $-\$20$. It is negative because the 5% loss is still a profit.
+
+If I buy 1 of each bond, then the probability of one of the 2 defaulting is
+
+$$
+P(n_{\text{default}} \geq 1) = 1 - (1 - 0.04)^2 = 0.078
+$$
+
+In the 5% worst case, we will see 1 bond default. One bond returns nothing on its \$90 and the other pays \$100 on its \$90, so the profit and loss is $-90 + 10 = -80$ and VaR = 80.
+
+$$
+q(P_1) = q(P_2) = -10, \qquad q(P_1 + P_2) = 80
+$$
+
+$$
+q(P_1) + q(P_2) \geq q(P_1 + P_2)
+$$
+
+Does not hold. $-20$ is not greater than 80.
+
+The mechanism is worth seeing. Splitting the position moved probability mass across the 5% threshold. Concentrated, the bad event sits at 4% and VaR never sees it. Diversified, the bad event sits at 7.8% and VaR reports it in full. A measure that reads a single quantile is blind to everything on the far side of it, and diversification moves things across.
+
+This makes VaR non-coherent as a risk measure.
+
+But we still use it.
+
+Week 05 covers Expected Shortfall, which averages over the tail instead of reading one point on it, and is subadditive as a result.
+
+# Delta Normal VaR
+
+Sometimes called parametric VaR, this assumes payoffs are linear and returns are distributed multivariate normal.
+
+The assumptions make this a closed form solution.
+
+$$
+\alpha = 0.05 \Rightarrow VaR_{ret} \approx 1.65\, \sigma_P
+$$
+
+Where VaR is expressed as a return. You transform that into a price to get a dollar value.
+
+Assuming arithmetic returns:
+
+$$
+VaR_{\$} = P_0 - P_0\left( 1 + \mu - VaR_{ret} \right) = P_0 VaR_{ret} - P_0 \mu
+$$
+
+Assuming geometric returns:
+
+$$
+VaR_{\$} = P_0 - P_0 e^{\mu - VaR_{ret}}
+$$
+
+These numbers will be close but not exact. It is important to understand how your returns were calculated and use the proper version.
+
+Most times we assume $\mu = 0$. We will assume that from here out.
+
+## The Gradient
+
+Break down change in portfolio value as
+
+$$
+\Delta PV = \sum_{i=1}^{n} d_i \Delta P_i
+$$
+
+Assuming arithmetic returns and the $\Delta$ function as the return, then
+
+$$
+R = \sum_{i=1}^{n} d_i r_i
+$$
+
+We assume arithmetic returns because they are summable across the portfolio.
+
+What is left is to find $d_i$. If we think of the equation above as a Taylor polynomial, then $d_i$ is just the first derivative of portfolio value with respect to price $i$.
+
+We do not hold prices, we hold assets (also called positions). So by the chain rule we need 2 derivatives.
+
+$$
+\frac{dR}{dr_i} = \frac{dR}{dRA_i} \frac{dRA_i}{dr_i}
+$$
+
+The derivative of the portfolio return $R$ with respect to the return on the asset $RA_i$ is easy. That is the weight $w_i$ from before, assuming arithmetic returns. If I hold 50% of the portfolio in Asset 1 and asset 1 returns 5%, then the change in the portfolio value is 2.5%.
+
+The derivative of the asset return with respect to the price return requires us to have a pricing function. Calculate the first derivative of the asset with respect to the current price.
+
+$$
+\Delta A_i \approx \delta\, \Delta P_i, \qquad \delta = \frac{dA_i}{dP_i}
+$$
+
+The change in the value of the asset is approximately the derivative of the asset with respect to price, times the change in price.
+
+$$
+r_i = \frac{\Delta P_i}{P_i}, \quad RA_i = \frac{\Delta A_i}{A_i} \Rightarrow RA_i \approx \frac{\delta P_i r_i}{A_i}
+$$
+
+$$
+\frac{dRA_i}{dr_i} = \frac{\delta P_i}{A_i}
+$$
+
+Linear instruments like stocks are easy. The pricing function is just the price of the stock. The derivative is 1. The price of the asset and the price of the underlying are the same. A 1% change in the price causes a 1% change in the value of the position.
+
+Derivatives are additive. If we have $m$ assets that are affected by price $i$:
+
+$$
+\frac{dR}{dr_i} = \sum_{j=1}^{m} w_j \frac{dRA_j}{dr_i} = P_i \sum_{j=1}^{m} \frac{w_j \delta_j}{A_j}
+$$
+
+If you recognize that $w_j = \frac{h_j A_j}{PV}$, where $h_j$ is the units of the asset held, we can also express this in terms of holdings instead of weights. Depending on how you set up the problem, use the one that makes the most sense.
+
+$$
+\frac{dR}{dr_i} = \frac{P_i}{PV} \sum_{j=1}^{m} h_j \delta_j
+$$
+
+We now have a gradient, $\nabla R$, of the portfolio return with respect to our underlying price returns. With the assumption of multivariate normality, it follows:
+
+$$
+R \sim N\left( \nabla R^T \mu,\ \nabla R^T \Sigma\, \nabla R \right)
+$$
+
+This is where the whole method lives. $\nabla R$ collapses any number of positions into one exposure per underlying price, and the normal is closed under linear transforms, so the portfolio return is normal with a variance we can write down.
+
+We assumed that $\mu_i = 0\ \forall\ i$, so VaR is simply
+
+$$
+VaR(\alpha) = -PV \cdot F_X^{-1}(\alpha) \cdot \sqrt{\nabla R^T \Sigma\, \nabla R}
+$$
+
+Where $F_X^{-1}(\alpha)$ is the quantile function for the standard normal. At $\alpha = 0.05$ that value is $-1.645$, and the leading minus sign is what turns it back into a positive loss.
+
+## Worked Example
+
+Assume we have:
+
+- 3 assets $A = \left[ A_1, A_2, A_3 \right]$ with current values $[1, 8, 20]$
+- 2 prices $P = \left[ P_1, P_2 \right]$ with current prices $[7, 10]$
+- We hold assets 1 to 3 in quantities $Q = [10, 20, 5]$
+- Total portfolio value is then $A'Q = 1 \cdot 10 + 8 \cdot 20 + 20 \cdot 5 = 270$
+- $\frac{dA_1}{dP_1} = 0.5$, $\frac{dA_2}{dP_1} = 1$, $\frac{dA_3}{dP_2} = 1$
+- All other partial derivatives are 0
+
+$$
+\Sigma = \begin{pmatrix} 0.01 & 0.0075 \\ 0.0075 & 0.0225 \end{pmatrix}
+$$
+
+Assets 1 and 2 both depend on $P_1$, so their sensitivities add:
+
+$$
+\frac{dR}{dr_1} = \frac{7}{270}\left( 10 \cdot 0.5 + 20 \cdot 1 \right) = 0.6481
+$$
+
+$$
+\frac{dR}{dr_2} = \frac{10}{270}\left( 5 \cdot 1 \right) = 0.1852
+$$
+
+$$
+\sqrt{\nabla R^T \Sigma\, \nabla R} = 0.0823
+$$
+
+Assuming a normal distribution and $\alpha = 0.05$, $F^{-1}(\alpha) = -1.645$:
+
+$$
+VaR = -270 \cdot (-1.645) \cdot 0.0823 = \$36.55
+$$
+
+If we remove the $PV$ from the equation, we get VaR as a percentage:
+
+$$
+VaR = -(-1.645) \cdot 0.0823 = 13.54\%
+$$
+
+Note that the two exposures, 0.6481 and 0.1852, sum to 0.833 rather than to 1. The portfolio is not fully exposed to its own prices, because asset 1 carries a delta of 0.5 rather than 1.
+
+## Where It Fails
+
+There are 2 big issues with the Delta Normal VaR.
+
+1. Assumption of normality of returns. See the GFC example in the code with this lecture. The largest 1 day return during the financial crisis was so large that it should not have happened in the lifetime of the universe.
+2. The linear assumption of portfolio value with returns. Options and bonds are common portfolio holdings and their return profiles are not linear with respect to underlying prices. The sign of the second derivative will decide if we over or underestimate VaR using this method.
+
+Issue 2 has a sign we can predict. The second derivative of an option value with respect to the underlying price is called gamma, and Week 06 covers it in full. A long option position has positive gamma, so the linear approximation understates the value on both sides and Delta Normal overstates the loss. A short option position has negative gamma, so Delta Normal understates the loss, which is the direction that matters.
+
+The two remaining methods each attack one of these. Monte Carlo VaR keeps the normality assumption and drops the linearity assumption. Historical VaR drops both.
+
+# Normal Monte Carlo VaR
+
+The second issue with Delta Normal VaR is that asset pricing functions can be, and often are, non-linear. This makes the return distribution of the asset not well defined, meaning we need to estimate it with a Monte Carlo simulation.
+
+We are still assuming returns are multivariate normal. What we are no longer assuming is that the portfolio is a linear function of them, so we reprice rather than differentiate.
+
+1. Calculate current portfolio value.
+2. Simulate $N$ draws from the assumed distribution.
+3. Calculate new prices from the returns, using the chosen methodology.
+4. Price each asset for all $N$ draws.
+5. Calculate portfolio value for each of the $N$ draws.
+6. Using the simulated portfolio values, find the $\alpha$% of the distribution.
+7. Calculate VaR.
+
+Step 2 is the Week 03 multivariate draw algorithm. Step 4 is where the cost is -- a full revaluation of every position on every draw, which for a book of American options is the difference between a calculation that runs in a second and one that runs overnight.
+
+We find the $\alpha$% by sorting the portfolio values and picking the $N\alpha$ value from the vector. For a large number of draws, this is sufficient. If the number of draws is small, then using something like a Kernel Density Estimate or another smoothing technique might provide better results.
+
+See <https://stats.stackexchange.com/questions/341023/quantile-of-kernel-density-estimator> for an example of calculating a quantile from a KDE.
+
+# Historical VaR
+
+Both issues with Delta Normal VaR, that returns are not normal and asset prices are not always linear, are sometimes addressed with Historical VaR.
+
+This looks much like Monte Carlo VaR, but instead of using a model for returns, we simply assume observed past returns mimic the distribution. Historical VaR is a non-parametric statistic -- we make no distributional assumptions on returns.
+
+## The Algorithm
+
+Historical VaR works like MC VaR. We do not simulate returns, we sample them from history.
+
+1. Calculate current portfolio value.
+2. Simulate $N$ draws from history with replacement.
+3. Calculate new prices from the returns, using the chosen methodology.
+4. Price each asset for all $N$ draws.
+5. Calculate portfolio value for each of the $N$ draws.
+6. Using the simulated portfolio values, find the $\alpha$% of the distribution.
+7. Calculate VaR.
+
+Sampling whole rows rather than individual returns is what preserves the correlation structure. There is no covariance matrix anywhere in this method, and no assumption that dependence is linear, because the joint behavior comes along with the row.
+
+| | Delta Normal | Monte Carlo Normal | Historical |
+|:--|:--|:--|:--|
+| Returns | multivariate normal | multivariate normal | sampled from history |
+| Payoffs | linear | any | any |
+| Dependence | $\Sigma$ | $\Sigma$ | whatever occurred |
+| Cost | closed form | $N$ revaluations | $N$ revaluations |
+| Main weakness | both assumptions | fat tails | limited history |
+
+: The three VaR methods {#tbl-varmethods}
+
+@tbl-varmethods is the choice in practice. Nothing in the first two columns can produce a loss larger than the normal allows, and nothing in the third column can produce a loss that has not already happened.
+
+Historical VaR still suffers from recency bias. Often there is not enough history to show all regimes, so a limited sample is selected.
+
+Using a KDE to smooth the VaR estimation is highly recommended.
+
+## Weighted Historical Simulation
+
+We can add weights to historical values, much like we added weights for the exponentially weighted covariance estimate. Without weights each day has an equal chance of being selected. Weights alter that probability.
+
+Assume you have $m$ days of history and each day $i$ is given weight $w_i$:
+
+$$
+\sum_{i=1}^{m} w_i = 1
+$$
+
+Calculate the cumulative weight vector $cw$ as
+
+$$
+cw_i = \sum_{j=1}^{i} w_j\ \ \forall\ i \in 1:m
+$$
+
+The algorithm for selecting a day $i$ is
+
+$$
+r \sim U(0,1)
+$$
+
+$$
+\min(i) \ \text{where}\ r \leq cw_i
+$$
+
+This is the inverse CDF method from Week 03, applied to a discrete distribution over historical days. The effective sample size discussion from Week 03 applies unchanged, and it bites harder here. A weighted historical VaR at $\lambda = 0.94$ is estimating a 5% quantile from roughly 32 effective observations, which puts one or two days in the tail.
+
+# Time Periods Larger than 1 {#sec-multiday}
+
+Sometimes we are interested in holding periods greater than a single day. This can be an issue, as the data required to estimate multi-day ahead dynamics are more than single day ahead.
+
+Often you see the $\sqrt{t}$ rule. This comes from an assumption that returns are summable across time, which means geometric returns.
+
+$$
+R_T = \sum_{t=1}^{T} R_t, \quad R_t \sim N\left( \mu, \sigma^2 \right)\ iid \Rightarrow R_T \sim N\left( T\mu,\ T\sigma^2 \right)
+$$
+
+Assuming $\mu = 0$:
+
+$$
+VaR_t(\alpha) = -PV \cdot F_X^{-1}(\alpha) \cdot \sigma
+$$
+
+$$
+VaR_T(\alpha) = -PV \cdot F_X^{-1}(\alpha) \cdot \sqrt{T}\, \sigma = \sqrt{T}\, VaR_t(\alpha)
+$$
+
+The rule needs all three assumptions in that line. Normality, independence across time, and constant variance. The last two are the ones that fail in practice.
+
+Volatility is not constant. Large moves cluster, and the level itself shifts between regimes. Week 02 modeled the clustering with GARCH and Week 03 handled the level shifts with an exponentially weighted estimator, and neither of those is compatible with a fixed $\sigma$ scaled by $\sqrt{T}$. Serial correlation in the returns breaks the independence assumption in the same line. Both effects push the true multi-day risk above what the rule reports, and both grow with $T$.
+
+This estimation is often good enough. The options for each type of VaR other than the $\sqrt{t}$ rule:
+
+1. Delta Normal -- none. Use the $\sqrt{t}$ rule. There is no other closed form solution and you are often using this approach when you need something that is quick to estimate.
+2. Monte Carlo Normal -- two options.
+    a. If you are using arithmetic returns, simulate $T \times N$ random normals instead of $N$. Compound your returns across time, and then price the portfolio.
+    b. If you are using geometric returns, geometric returns are summable across time and we have assumed normality, so we know the $T$ period ahead distribution. Scale the covariance matrix by $T$, and the mean vector if you are using one. That is, multiply all elements of the covariance matrix by $T$. Simulate $N$ values, which now have properly scaled variance, convert to prices, and price the portfolio.
+3. Historical simulation -- two options.
+    a. If you have a lot of historical data, segregate the data into $M$ non-overlapping time periods. Sample from those $M$ periods.
+    b. If you do not have a lot of historical data, segregate the data into $M$ overlapping time periods. This can cause a bias to your estimate. The samples are no longer independent.
+
+Option 2a and option 2b are not the same calculation. Path matters under arithmetic returns, because compounding is multiplicative while the returns are added, so the $T$ period distribution is not normal and has to be simulated. Under geometric returns the path drops out and only the sum matters, which is why scaling $\Sigma$ works.

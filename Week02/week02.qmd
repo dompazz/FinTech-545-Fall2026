@@ -1,0 +1,907 @@
+---
+title: "Week 02 — Multivariate Statistics and Regression"
+subtitle: "FinTech 545 --- Quantitative Risk Management"
+author: "Dominic Pazzula"
+format:
+  pdf:
+    output-file: "Week 02 - Multivariate Statistics and Regression.pdf"
+    documentclass: scrartcl
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fig-pos: 'H'
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{etoolbox}
+        % Tables here are all short. Without this, longtable can place its
+        % header at the bottom of a page, break, and repeat the header on the
+        % next page with no rows under it. Require room for a few lines first.
+        \AtBeginEnvironment{longtable}{\Needspace*{8\baselineskip}}
+    number-sections: true
+    toc: true
+    toc-depth: 2
+  html:
+    output-file: "Week 02 - Multivariate Statistics and Regression.html"
+    toc: true
+    html-math-method: katex
+---
+
+# Co-movement
+
+Multivariate statistics deals with 2 or more random variables and their co-movement.
+
+Week 01 handled one variable at a time. A portfolio is never one variable. The reason a portfolio of 50 stocks is less risky than any one of them, and the reason that protection disappears in a crisis, are both statements about co-movement rather than about any individual distribution.
+
+The last equation of Week 01 already showed the mechanism. For $Z = Ax + By + c$:
+
+$$
+\sigma_z^2 = A^2 \sigma_x^2 + B^2 \sigma_y^2 + 2AB\, \operatorname{cov}(x,y)
+$$
+
+The first two terms are what we already know how to estimate. The third term is this week.
+
+## Covariance {#sec-cov}
+
+**Covariance** between 2 variables is defined as the expected value of the product of the deviation from their means. Covariance is defined on the real number line.
+
+$$
+\operatorname{cov}(x,y) = E\left[ \left( x - \mu_x \right)\left( y - \mu_y \right) \right]
+$$
+
+Where $\mu_x, \mu_y$ are the mean of $x$ and $y$.
+
+Numerically, this is calculated like the variance:
+
+$$
+\operatorname{cov}(x,y) = \frac{1}{n-1} \sum_{i=1}^{n} \left[ \left( x_i - \bar{x} \right)\left( y_i - \bar{y} \right) \right]
+$$
+
+The $n-1$ is there for the same degrees of freedom reason as the variance estimator. Two means were estimated from the same data, but they cost one degree of freedom between them, not two.
+
+Wikipedia lists a few facts on the covariance of linear combinations of random variables, all of which are key to understand. Most should be obvious from the definition.
+
+1. $\operatorname{cov}(x,a) = 0$ -- the covariance of a variable and a constant is 0
+2. $\operatorname{cov}(x,x) = \operatorname{var}(x)$ -- as stated above
+3. $\operatorname{cov}(x,y) = \operatorname{cov}(y,x)$ -- order does not matter
+4. $\operatorname{cov}(ax,by) = ab\, \operatorname{cov}(x,y)$ -- covariance scales similar to variance
+5. $\operatorname{cov}(a+x, b+y) = \operatorname{cov}(x,y)$ -- covariance is invariant to the mean
+6. $\operatorname{cov}(ax + by,\ cw + dv) = ac\, \operatorname{cov}(x,w) + ad\, \operatorname{cov}(x,v) + bc\, \operatorname{cov}(y,w) + bd\, \operatorname{cov}(y,v)$
+7. $\operatorname{var}\left( \sum_i^n a_i X_i \right) = \sum_i^n \sum_j^n a_i a_j \operatorname{cov}\left( X_i, X_j \right)$ where $X$ is a vector of random variables and $a$ is a vector of constants
+
+Fact 7 is the one to memorize. A portfolio is $\sum a_i X_i$, so fact 7 says the variance of any portfolio is a double sum over the covariance matrix. Every risk number in this course is a version of that expression.
+
+Covariance has no natural scale. Doubling the units of $x$ doubles the covariance, which makes two covariances impossible to compare directly. Correlation fixes that.
+
+## Correlation
+
+**Correlation** is a statistic, ranging between -1 and 1, that describes how strongly 1 variable moves with another.
+
+There are 2 common correlation calculation methodologies used in risk management.
+
+1. Pearson coefficient is the most widely used. It is a linear measure.
+2. Spearman's rank coefficient is a measure of monotonicity. It is less sensitive to outliers and does not depend on a linear relationship.
+
+There are other measures of correlation and you are encouraged to research on your own.
+
+| | Pearson | Spearman |
+|:--|:--|:--|
+| Measures | Linear association | Monotonic association |
+| Computed on | Values | Ranks |
+| Outlier sensitivity | High | Low |
+| Equals $\pm 1$ when | Points lie on a line | Points are monotone |
+
+: Pearson against Spearman {#tbl-corr}
+
+@tbl-corr is the whole comparison. Which one is right depends on what the number is going to be used for, and in this course it is usually going to be used to build a covariance matrix, which means Pearson.
+
+## Pearson Coefficient
+
+**Pearson Coefficient** is a linear measure of correlation. It is the most common form of correlation taught. 99% of the time when someone uses the phrase "correlation," they mean the Pearson Coefficient.
+
+Pearson coefficient is the covariance scaled into the $[-1,1]$ range.
+
+$$
+\rho_{i,j} = \frac{\operatorname{cov}\left( X_i, X_j \right)}{\sigma_i \sigma_j}
+$$
+
+![Pearson correlation of 1.0 and 0.0. The right panel is $y = x^2$](figures/rank-examples.png){#fig-rank width=85%}
+
+The right panel of @fig-rank is the warning. $y$ is a deterministic function of $x$, there is no randomness at all, and the Pearson coefficient is zero. A correlation of zero means no linear relationship. It does not mean no relationship, and it does not mean independence.
+
+The converse does hold for the multivariate normal in @sec-mvn, which is one of the reasons that distribution is so heavily used.
+
+## Spearman Rank Coefficient
+
+**Spearman Coefficient** is a nonparametric measure of correlation. Spearman uses ranks to calculate the correlation. Because of this, the correlation is a measure of monotonicity.
+
+$$
+r_s = \rho_{R(x),R(y)} = \frac{\operatorname{cov}(R(x),R(y))}{\sigma_{R(x)} \sigma_{R(y)}} = \frac{\sum_{i=1}^{n}\left( R\left( x_i \right) - \overline{R(x)} \right)\left( R\left( y_i \right) - \overline{R(y)} \right)}{\sqrt{\sum_{i=1}^{n}\left( R\left( x_i \right) - \overline{R(x)} \right)^2} \sqrt{\sum_{i=1}^{n}\left( R\left( y_i \right) - \overline{R(y)} \right)^2}}
+$$
+
+Where:
+
+- $\rho_{x,y}$ is the Pearson coefficient of $x$ and $y$
+- $R(x)$ is the rank function
+- $\overline{R(x)}$ is the average of the rank function
+
+Spearman is the Pearson coefficient computed on ranks. Nothing more than that.
+
+The rank function assigns integer values from lowest to highest values in the input vector. Ties are broken by averaging the rank of all the tied values.
+
+| Value | Order | Rank |
+|--:|--:|--:|
+| 1.2 | 5 | 5 |
+| 0.8 | 2 | 3 |
+| 1.3 | 6 | 6 |
+| 0.8 | 3 | 3 |
+| 0.8 | 4 | 3 |
+| 0.5 | 1 | 1 |
+
+: The rank function, with the three tied values averaged {#tbl-rank}
+
+The three tied values in @tbl-rank hold orders 2, 3, and 4, so each of them receives the average of those three orders, which is a rank of 3.
+
+Here $y = x^3$:
+
+![$y=x^{3}$: Pearson is 0.74 but Spearman is 1.00 because the relationship is monotonic](figures/cubic-monotone.png){#fig-cubic width=85%}
+
+Because the function is perfectly monotonically increasing, the Spearman coefficient is 1. Pearson comes in at 0.74 because the relationship, while perfect, is not a straight line.
+
+Note what happened between @fig-rank and @fig-cubic. Both figures show a deterministic relationship, and the two measures disagree in both cases. Neither measure is wrong. They answer different questions.
+
+Spearman returns in Week 05. A copula separates the dependence structure from the marginal distributions, and rank correlation is the natural way to describe dependence once the marginals have been stripped out.
+
+# The Multivariate Normal Distribution {#sec-mvn}
+
+The most commonly used multivariate distribution is the multivariate normal. It is important to understand the dynamics of this distribution.
+
+Notation:
+
+$$
+X \sim N(\mu, \Sigma)
+$$
+
+- $X$ is a $(N \times 1)$ random vector
+- $\mu$ is the $(N \times 1)$ vector of expected values
+- $\Sigma$ is the $(N \times N)$ covariance matrix
+
+$$
+\Sigma_{i,j} = \operatorname{cov}\left( X_i, X_j \right)
+$$
+
+## Positive Definiteness {#sec-psd}
+
+Note: $\operatorname{var}(w'X) = w' \Sigma w$. This is fact 7 from @sec-cov written in matrix form, and it constrains what $\Sigma$ is allowed to be.
+
+**Positive semi-definite**, PSD:
+
+$$
+w' \Sigma w \geq 0\ \ \forall\ w \in \mathbb{R}^n
+$$
+
+Every covariance matrix is PSD. This is not an assumption we impose, it is forced -- $w'\Sigma w$ is the variance of the portfolio $w'X$, and a variance cannot be negative. Equivalently, every eigenvalue of $\Sigma$ is greater than or equal to 0.
+
+**Positive definite**, PD, is the same statement with a strict inequality:
+
+$$
+w' \Sigma w > 0\ \ \forall\ w \neq 0
+$$
+
+Every eigenvalue is strictly greater than 0.
+
+The gap between the two is a portfolio with exactly zero variance. If $w'\Sigma w = 0$ for some $w \neq 0$, then $w'X$ is a constant, which means one of the variables is an exact linear combination of the others. In that case $\Sigma$ is singular. It has at least one zero eigenvalue, $|\Sigma| = 0$, and $\Sigma^{-1}$ does not exist.
+
+$\Sigma$ is positive definite in the non-degenerative case. We will deal with this later.
+
+A matrix that fails the PSD condition entirely, with $w'\Sigma w < 0$ for some $w$, assigns a negative variance to a real portfolio. That is not a rounding problem. It is a covariance matrix that cannot have come from any data. Week 03 covers what to do when the matrix we are handed fails this test.
+
+## The Density
+
+$$
+f(X) = \frac{e^{-\frac{1}{2}(X - \mu)' \Sigma^{-1} (X - \mu)}}{\sqrt{(2\pi)^k |\Sigma|}}
+$$
+
+The exponent is the multivariate version of $\left( \frac{x-\mu}{\sigma} \right)^2$ from Week 01. $\Sigma^{-1}$ is doing the work that division by $\sigma^2$ did in one dimension.
+
+The density requires PD, not just PSD. Both $\Sigma^{-1}$ and $|\Sigma|$ appear, and in the PSD but not PD case $|\Sigma| = 0$, so the denominator is zero and the inverse in the exponent does not exist either.
+
+There is nothing to work around here. The distribution genuinely has no density in $n$ dimensions, because all of its mass sits on a lower dimensional subspace. The degenerate direction still has a perfectly good distribution, it is just a point mass rather than a density.
+
+This case is common rather than exotic. A sample covariance matrix estimated from fewer observations than variables is always singular, which is the starting point for Week 09.
+
+## The Linear Transform
+
+If $X \sim N(\mu, \Sigma)$, then there exists
+
+$$
+\mu \in \mathbb{R}^n,\ L \in \mathbb{R}^{n \times m} \quad \text{such that} \quad X = LZ + \mu
+$$
+
+Where
+
+$$
+Z_i \sim N(0,1), \quad i \in [1,m]
+$$
+
+$$
+\Sigma = LL'
+$$
+
+This gives us a way to simulate multivariate normal vectors. We will do this later.
+
+The construction is the multivariate version of $X = \mu + \sigma Z$ from Week 01, with $L$ standing in for $\sigma$. Week 03 is largely about finding $L$, because the factorization exists in theory and the algorithm that produces it fails in practice more often than you would expect.
+
+## Conditional Distributions {#sec-cond}
+
+Conditional distributions -- given a known value or values of random variables in the normal vector, what is the distribution of the remaining variables?
+
+$X \sim N(\mu, \Sigma)$. Partition $X$, $\mu$, and $\Sigma$ as:
+
+$$
+\mathbf{x} = \begin{bmatrix}\mathbf{x}_{1}\\ \mathbf{x}_{2}\end{bmatrix}
+\quad\text{with sizes}\quad
+\begin{bmatrix} q \times 1\\ (N-q) \times 1\end{bmatrix}
+$$
+
+$$
+\boldsymbol{\mu} = \begin{bmatrix}\boldsymbol{\mu}_{1}\\ \boldsymbol{\mu}_{2}\end{bmatrix}
+\quad\text{with sizes}\quad
+\begin{bmatrix} q \times 1\\ (N-q) \times 1\end{bmatrix}
+$$
+
+$$
+\boldsymbol{\Sigma} = \begin{bmatrix}\boldsymbol{\Sigma}_{11} & \boldsymbol{\Sigma}_{12}\\
+\boldsymbol{\Sigma}_{21} & \boldsymbol{\Sigma}_{22}\end{bmatrix}
+\quad\text{with sizes}\quad
+\begin{bmatrix} q \times q & q \times (N-q)\\ (N-q) \times q & (N-q) \times (N-q)\end{bmatrix}
+$$
+
+Given
+
+$$
+X_2 = a
+$$
+
+Then
+
+$$
+X_1 \sim N(\bar{\mu}, \bar{\Sigma})
+$$
+
+Where
+
+$$
+\bar{\mu} = \mu_1 + \Sigma_{12} \Sigma_{22}^{-1} \left( a - \mu_2 \right)
+$$
+
+$$
+\bar{\Sigma} = \Sigma_{11} - \Sigma_{12} \Sigma_{22}^{-1} \Sigma_{21}
+$$
+
+Two things about the conditional variance are worth noticing. It does not depend on $a$ at all, so learning the value of $X_2$ reduces the uncertainty in $X_1$ by the same amount regardless of what value showed up. And $\Sigma_{12}\Sigma_{22}^{-1}\Sigma_{21}$ is positive semi-definite, so conditioning never increases variance.
+
+The expression for $\bar{\mu}$ is a regression. $\Sigma_{12}\Sigma_{22}^{-1}$ is the matrix of coefficients from regressing $X_1$ on $X_2$, and the next section derives the same quantity from an entirely different starting point. Week 03 uses this result directly to fill in missing observations in a return matrix.
+
+# Ordinary Least Squares
+
+Ordinary Least Squares, or OLS, regression is the most widely used form of regression analysis.
+
+## The Seven Assumptions
+
+There are 7 assumptions made for this model:
+
+1. The model is linear in the parameters and error term. That is, the model must be specified as:
+
+$$
+y = \beta_0 + \beta_1 x_1 + \dots + \beta_n x_n + \epsilon
+$$
+
+2. The error term, $\epsilon$, has 0 mean.
+3. The regressors ($X$) or "independent variables" are uncorrelated with the error term.
+4. The values of the error term are uncorrelated with each other:
+
+$$
+E\left( \epsilon_i \epsilon_j \right) = 0\ \ \forall\ i \neq j
+$$
+
+5. The error term has a constant variance -- the variance does not vary over the sample.
+
+> Assumptions 4 and 5 mean the error term is identically and independently distributed (*iid*)
+
+6. There is not a perfect linear dependence between the regressors.
+7. The error term is normally distributed.
+
+Assumption 7 can be broken, however, if assumed, then hypothesis testing along with confidence and prediction intervals can be calculated.
+
+Assuming 7 and 4, and allowing an intercept term in your model of 1 ($\beta_0$), then 2 flows naturally. All expected value after accounting for the regressors is carried in the intercept and the error term will have 0 expected value.
+
+Explore the relaxation of 3 on your own time.
+
+We will deal with the relaxation of 4 and 5 later. @sec-ts handles the relaxation of 4, and @sec-garch handles the relaxation of 5. Both are the same idea -- model the structure that OLS assumed away, then apply OLS to what is left.
+
+A violation of 6 usually means you need to reduce the number of variables in your analysis. We will discuss other methods later in this class. In the next section, we will see mathematically why this is an issue.
+
+## Solving for Beta
+
+Construct the regressor matrix:
+
+$$
+X = [\,\mathbf{1}\ \ X\,]
+$$
+
+Where $\mathbf{1}$ is a vector of 1s and $X$ is a matrix of $n$ observations of $m$ dependent variables. The final matrix is then $(n, m+1)$. Assume $m + 1 < n$.
+
+$$
+Y = X\beta
+$$
+
+This system is overdetermined and likely has no solution. We seek to approximate $\beta$ such that
+
+$$
+Y = X\hat{\beta} + \epsilon
+$$
+
+To find the smallest possible error, solve for $\hat{\beta}$ so that
+
+$$
+\epsilon = Y - X\hat{\beta}
+$$
+
+$$
+\text{minimize } S(\hat{\beta}) = \epsilon' \epsilon
+$$
+
+Recognize this as the sum of the squares of the errors.
+
+If $\epsilon_i \sim N(0, \sigma^2)$ for all $i$, then this is the same as minimizing the variance of the errors.
+
+From a linear algebra perspective:
+
+$$
+Y = X\beta
+$$
+
+Multiply each side by $(X'X)^{-1}X'$:
+
+$$
+(X'X)^{-1}X'Y = (X'X)^{-1}X'X\beta
+$$
+
+$$
+(X'X)^{-1}X'Y = I_{m+1}\, \beta
+$$
+
+$$
+\hat{\beta} = (X'X)^{-1}X'Y
+$$
+
+In the single regressor case this collapses to a statement about the covariance:
+
+$$
+\hat{\beta_i} = \frac{\operatorname{cov}\left( x_i, y \right)}{\sigma_{x(i)}^2} = \frac{\sigma_y \rho_{x(i),y}}{\sigma_{x(i)}}
+$$
+
+That expression is the same object that appeared as $\Sigma_{12}\Sigma_{22}^{-1}$ in @sec-cond. A regression coefficient is a scaled covariance, whether it arrives from a minimization problem or from conditioning a normal vector.
+
+If all the assumptions 1 through 6 hold, then $\hat{\beta}$ is the solution to the minimization problem. If assumption 7 holds, then this solution is also the maximum likelihood estimator.
+
+## Standard Errors
+
+Let $p = m + 1$.
+
+$$
+s^2 = \frac{\epsilon' \epsilon}{n - p}, \qquad \hat{\sigma}^2 = \frac{n-p}{n} s^2
+$$
+
+$$
+E\left( s^2\ |\ X \right) = \sigma^2, \qquad E\left( \hat{\beta}\ |\ X \right) = \beta
+$$
+
+$$
+\operatorname{var}\left( \hat{\beta}\ |\ X \right) = \sigma^2 (X'X)^{-1}
+$$
+
+The standard error of $\hat{\beta}$ is then
+
+$$
+\text{s.e. } \hat{\beta} = s \sqrt{\operatorname{diag}\left( (X'X)^{-1} \right)}
+$$
+
+Where $\operatorname{diag}()$ is the vector of the diagonal elements.
+
+The $n - p$ in $s^2$ is the same degrees of freedom argument as the $n-1$ in the sample variance, generalized. We estimated $p$ parameters from the data, so $p$ degrees of freedom are gone.
+
+## Multicollinearity
+
+Implications of assumption 6. $X'X$ is a Gram matrix, so it is PSD by the same argument as @sec-psd -- for any vector $v$, $v'X'Xv = (Xv)'(Xv) = \|Xv\|^2 \geq 0$.
+
+Assumption 6 is what makes it PD rather than merely PSD. If the columns of $X$ are linearly dependent, then some $v \neq 0$ gives $Xv = 0$, so $v'X'Xv = 0$. $X'X$ is then singular, $|X'X| = 0$, and $(X'X)^{-1}$ does not exist. It is the same failure as a covariance matrix losing rank, arriving through a different door.
+
+We can measure the amount of linear dependence by looking at the smallest eigenvalue of $X'X$. As this value tends to 0, the linear dependence among the regressors is increasing. This is called "multicollinearity." The inverse becomes unstable, and as such so are the $\hat{\beta}$ values. The standard errors of the coefficients rise.
+
+Perfect dependence is the easy case, because the matrix is singular, the software fails, and you go look for the problem. Near dependence is the dangerous one. The regression runs and reports a respectable $R^2$, while the individual coefficients come back large, unstable, and occasionally carrying the wrong sign, and dropping a single observation moves them.
+
+The same smallest-eigenvalue diagnostic reappears in Week 03 for covariance matrices and again in Week 09 for factor exposures. It is the same problem in all three places.
+
+## Serial Correlation in the Residuals
+
+Assumption 4 is a different failure from assumption 6, and it has its own diagnostic.
+
+The Durbin Watson statistic can be calculated with many statistical packages. It is a measure of serial correlation of the errors of a regression, which is assumption 4. Values near 2 indicate there is no serial correlation.
+
+The statistic runs from 0 to 4. Values below 2 indicate positive serial correlation, values above 2 indicate negative serial correlation, and 2 is the no-correlation case. Durbin Watson tests the first lag only, so a series correlated at longer lags can pass it. @sec-ts handles what to do once the test fails.
+
+# Maximum Likelihood Estimation {#sec-mle}
+
+Maximum Likelihood Estimation (MLE) attempts to find parameter values to maximize the joint probability of the observed data.
+
+OLS minimizes a sum of squares and asks nothing about the distribution of the errors. MLE starts from an assumed distribution and asks which parameters make the observed data most probable. The two agree under normality and part company as soon as we leave it, which is most of this course.
+
+## The Likelihood Function
+
+In simple terms, the likelihood can be thought of as the product of the PDF values:
+
+$$
+l = \prod_{i=1}^{n} f(Y\ |\ X;\ \beta)
+$$
+
+Numerically, PDF values are typically less than 1 -- the CDF is the integral of the PDF and evaluated across the support equals 1. This causes problems as floating point math on computers loses precision as we start looking at smaller and smaller numbers.
+
+A thousand observations at a density of 0.3 gives a likelihood around $0.3^{1000} \approx 10^{-523}$, which is below the smallest number a 64 bit float can represent. The product underflows to exactly zero and the optimizer has nothing to work with.
+
+We take the log of both sides to get
+
+$$
+ll = \sum_{i=1}^{n} \ln \left( f(Y|X;\beta) \right)
+$$
+
+MLE is then the maximization of this function. The log is monotone, so the maximizing parameters are unchanged. Those same thousand observations at a density of 0.3 now contribute $\ln(0.3) = -1.2$ each, and a sum of a thousand numbers near $-1.2$ is a number a computer can handle.
+
+## The Normal Distribution {#sec-mlenormal}
+
+For the normal distribution:
+
+$$
+l = \prod_{i=1}^{n} f(x_i\ ;\ \mu, \sigma) = \prod_{i=1}^{n} \frac{1}{\sigma\sqrt{2\pi}} e^{-\frac{1}{2}\left( \frac{x_i - \mu}{\sigma} \right)^2}
+$$
+
+$$
+ll = \sum_{i=1}^{n} \ln\left( f\left( x_i \right) \right) = \sum_{i=1}^{n} \left[ -\frac{1}{2}\ln\left( \sigma^2 2\pi \right) - \frac{1}{2}\left( \frac{x_i - \mu}{\sigma} \right)^2 \right]
+$$
+
+$$
+ll = -\frac{n}{2}\ln\left( \sigma^2 2\pi \right) - \frac{1}{2\sigma^2}\sum_{i=1}^{n}\left( x_i - \mu \right)^2
+$$
+
+You can solve this maximization problem to show the MLE estimates for the normal distribution are
+
+$$
+\hat{\mu} = \frac{1}{n}\sum_{i=1}^{n} x_i \qquad\qquad \widehat{\sigma^2} = \frac{1}{n}\sum_{i=1}^{n}(x_i - \mu)^2
+$$
+
+Notice the maximum likelihood estimator for the variance is NOT unbiased. Maximum likelihood does not promise unbiasedness. It promises consistency and, asymptotically, the smallest variance of any consistent estimator, which is a different guarantee.
+
+## Regression by MLE
+
+When fitting a regression model, you are fitting the likelihood to the error term.
+
+$$
+\epsilon = Y - X\hat{\beta}
+$$
+
+We want to set the mean to 0.
+
+$$
+ll = -\frac{n}{2}\ln\left( \sigma^2 2\pi \right) - \frac{1}{2\sigma^2}\sum_{i=1}^{n}\left( \epsilon_i - 0 \right)^2
+$$
+
+You can solve this problem to show that the solution for $\hat{\beta}$ is the same as the OLS solution.
+
+The only term involving $\beta$ is $\sum \epsilon_i^2$, and it carries a negative sign. Maximizing the log likelihood over $\beta$ is therefore minimizing the sum of squared errors, which is the OLS problem written backwards.
+
+The value of setting the regression up this way is that the normal density can be replaced. Fit the same regression with a $t$ distributed error term and OLS has nothing to say, while the likelihood construction needs only a different $f$. Week 05 does exactly that.
+
+# Model Selection
+
+Often we have multiple models to choose between. Goodness of Fit statistics help with this process.
+
+## R Squared
+
+R-Square, $R^2$, is the variance explained by the model as a fraction of the total independent variable's variance.
+
+$$
+SS_{total} = \sum_{i=1}^{n} \left( y_i - \bar{y} \right)^2
+$$
+
+$$
+SS_{error} = \sum_{i=1}^{n} \left( \epsilon_i - \bar{\epsilon} \right)^2 = \sum_{i=1}^{n} \epsilon_i^2
+$$
+
+$$
+SS_{model} = SS_{total} - SS_{error}
+$$
+
+$$
+R^2 = \frac{SS_{model}}{SS_{total}} = 1 - \frac{SS_{error}}{SS_{total}}
+$$
+
+The biggest problem with $R^2$ is that as variables are added, it continuously increases, regardless if they are explanatory.
+
+In linear algebra terms, as you add additional values to $X$ then
+
+$$
+Y = X\beta
+$$
+
+becomes more deterministic. Once $X$ is a square matrix, then the system can have a singular solution and $\operatorname{var}(\epsilon) = 0$.
+
+An $R^2$ of 1.0 obtained that way describes the sample perfectly and forecasts nothing at all, because the extra columns are fitting the noise in this particular sample rather than any structure that will repeat. Adding a column of random numbers to any regression raises the $R^2$.
+
+## Adjusted R Squared
+
+Adjusted R Square penalizes the metric for additional explanatory variables.
+
+$$
+\text{Adj } R^2 = 1 - (1 - R^2)\frac{n-1}{n-p-1} = 1 - \frac{SS_{error}}{SS_{total}} \frac{n-1}{n-p-1}
+$$
+
+The penalty grows with $p$ and shrinks with $n$, so a variable has to earn its place by more than the fit it buys mechanically. Adjusted $R^2$ can decrease when a variable is added, and can be negative.
+
+## Information Criteria
+
+There are 2 different statistics widely used for model selection. Akaike Information Criterion (AIC) and Bayes Information Criterion (BIC). Both use the sum of the log likelihood functions, penalized for the number of parameters.
+
+$$
+AIC = 2k - 2\ln(\hat{L})
+$$
+
+In small sample sizes, AIC can tend to select models with higher numbers of parameters and overfitting of the model, in the same way $R^2$ does. The following correction is made:
+
+$$
+AICc = AIC + \frac{2k^2 + 2k}{n - k - 1}
+$$
+
+$$
+BIC = k \ln(n) - 2\ln(\hat{L})
+$$
+
+In each of these formulas,
+
+$$
+k = p + d
+$$
+
+Where $d$ is the number of additional parameters fit for the distribution in the MLE process. If a model has $q$ slope parameters, $p = q + 1$ (+1 for the intercept). Using the normal distribution, we have to account for the fitted variance, $d = 1$, $k = p + 1$.
+
+Lower is better for both. The difference between them is the size of the penalty -- AIC charges 2 per parameter while BIC charges $\ln(n)$, which is larger for any sample beyond 8 observations. BIC therefore selects smaller models, and the gap widens as the sample grows.
+
+The absolute value of AIC or BIC means nothing. Only differences between models fit to the same data are interpretable, and a model fit to a different sample cannot be compared at all.
+
+# Time Series {#sec-ts}
+
+One of the key assumptions in linear regression is the independence of the error:
+
+$$
+E(\epsilon_i \epsilon_j) = 0\ \ \forall\ i \neq j
+$$
+
+When this is broken, the results from your regression are suspect. The beta values are consistent, however the standard errors are not. Consistent means that as the number of observations goes to infinity, the estimate will converge to the true value. However, the estimate in small sample sizes is not "best," it will have a much wider (larger variance) distribution.
+
+The practical damage is in the standard errors rather than in the coefficients themselves. Serially correlated errors mean the sample carries less independent information than its length suggests, so the reported standard errors come in too small, the $t$-statistics come in too large, and variables look significant when they are not.
+
+Time series models are built in a way to get back to the assumptions of linear regression for the errors.
+
+1. Uncorrelated: $E(\epsilon_i \epsilon_j) = 0\ \forall\ i \neq j$
+2. 0 expected value: $E(\epsilon) = 0$
+3. Constant variance: $\operatorname{var}(\epsilon) = \sigma^2$
+
+Highly recommended reading: <https://mfe.baruch.cuny.edu/wp-content/uploads/2014/12/TS_Lecture1_2019.pdf>
+
+## Autocovariance, Autocorrelation, and Partial Autocorrelation
+
+Autocovariance is the covariance across time periods:
+
+$$
+\gamma(n) = \operatorname{cov}(y_t, y_{t-n})
+$$
+
+The Autocorrelation Function (ACF) is the Pearson correlation across time periods:
+
+$$
+\rho(n) = \frac{\gamma(n)}{\sigma_t \sigma_{t-n}}
+$$
+
+The Partial Autocorrelation Function (PACF) is the residual autocorrelation left in the series when $n-1$ lags have been taken into account. That is, the autocorrelation of the residual of the series regressed on the $n-1$ lags.
+
+ACF and PACF are helpful for identifying the type of model and appropriate lags to use.
+
+| Process | ACF | PACF |
+|:--|:--|:--|
+| MA(q) | Cuts off after lag $q$ | Decays |
+| AR(p) | Decays | Cuts off after lag $p$ |
+| ARMA(p,q) | Decays | Decays |
+
+: Identifying a model from its ACF and PACF {#tbl-acfpacf}
+
+@tbl-acfpacf is the reason both functions are reported together. Either one alone is ambiguous. The two derivations that follow produce the top two rows of the table.
+
+The structural autocovariance matrix determined by a specific model is used during MLE fitting.
+
+## Moving Average Processes
+
+**Moving Average** processes -- the independent variable is a function of past error terms.
+
+MA(1):
+
+$$
+y_t = \mu + \epsilon_t + \theta \epsilon_{t-1}
+$$
+
+Innovations (random errors) have a 2 period impact.
+
+$$
+E(y_t) = E(\mu + \epsilon_t + \theta \epsilon_{t-1}) = E(\mu) + E(\epsilon_t) + \theta E(\epsilon_{t-1}) = \mu
+$$
+
+The expected value is the mean.
+
+$$
+\operatorname{var}(y_t) = \operatorname{var}(\mu + \epsilon_t + \theta \epsilon_{t-1})
+$$
+
+$\mu$ is constant so we can take that out of the equation:
+
+$$
+\operatorname{var}(y_t) = \operatorname{var}(\epsilon_t) + \theta^2 \operatorname{var}(\epsilon_{t-1}) + 2\theta \operatorname{cov}(\epsilon_t, \epsilon_{t-1})
+$$
+
+$$
+\operatorname{var}(y_t) = \sigma^2 + \theta^2 \sigma^2 = (1 + \theta^2)\sigma^2
+$$
+
+The variance of the series is different from the variance of the errors. The covariance term dropped out because the errors are iid by assumption, which is the assumption we are trying to preserve.
+
+$$
+E(y_t | \Omega_{t-1}) = E(\mu + \epsilon_t + \theta \epsilon_{t-1} | \Omega_{t-1}) = \mu + 0 + \theta \epsilon_{t-1}
+$$
+
+The autocovariance of MA(1):
+
+$$
+\gamma(1) = E(y_t, y_{t-1}) = \theta \sigma^2
+$$
+
+Because $y_t$ does not depend on values beyond $y_{t-1}$:
+
+$$
+\gamma(k) = E(y_t, y_{t-k}) = 0\ \ \forall\ k > 1
+$$
+
+The ACF:
+
+$$
+\rho(1) = \frac{\gamma(1)}{(1 + \theta^2)\sigma^2} = \frac{\theta}{1 + \theta^2}
+$$
+
+$$
+\rho(k) = 0\ \ \forall\ k > 1
+$$
+
+That last line is the first row of @tbl-acfpacf. An MA(1) has exactly one non-zero autocorrelation, and it is bounded by 0.5 in absolute value for any $\theta$.
+
+Reconfiguring the MA(1):
+
+$$
+y_t = \mu + \epsilon_t + \theta \epsilon_{t-1}
+$$
+
+let
+
+$$
+\hat{y_t} = y_t - \mu = \epsilon_t + \theta \epsilon_{t-1}
+$$
+
+$$
+\epsilon_t = \hat{y_t} - \theta \epsilon_{t-1}
+$$
+
+$$
+\epsilon_{t-1} = \hat{y_{t-1}} - \theta \epsilon_{t-2}
+$$
+
+$$
+\epsilon_t = \hat{y_t} - \theta\left( \hat{y_{t-1}} - \theta \epsilon_{t-2} \right) = \hat{y_t} - \theta \hat{y_{t-1}} + \theta^2 \epsilon_{t-2}
+$$
+
+Indefinitely:
+
+$$
+\epsilon_t = \hat{y_t} + \sum_{i=1}^{\infty} (-\theta)^i\, \hat{y_{t-i}}
+$$
+
+$$
+\hat{y_t} = -\sum_{i=1}^{\infty} \left( (-\theta)^i\, \hat{y_{t-i}} \right) + \epsilon_t
+$$
+
+For $y$ to be defined, $|\theta| < 1$. That condition is what makes the weights $(-\theta)^i$ decline rather than explode, and it is called invertibility.
+
+MA(q) processes extend the MA(1) into more lags.
+
+$$
+y_t = \mu + \epsilon_t + \sum_{i=1}^{q} \theta_i \epsilon_{t-i}
+$$
+
+Example MA(1) process:
+
+![Simulated MA(1) with $\theta = 0.6$. The ACF cuts off after lag 1; the PACF decays](figures/ma1-example.png){#fig-ma1 width=100%}
+
+@fig-ma1 shows the signature. One significant spike in the ACF, at the theoretical value $\theta/(1+\theta^2) = 0.44$, and a PACF that decays with alternating sign. The shaded band is the $\pm 1.96/\sqrt{n}$ region where a sample autocorrelation is indistinguishable from zero.
+
+## Autoregressive Processes
+
+**Autoregressive Process** -- the independent variable is a function of its own lags.
+
+AR(1). Easiest to work with if we center it on 0.
+
+$$
+\hat{y_t} = y_t - \mu
+$$
+
+$$
+\hat{y_t} = \beta \hat{y_{t-1}} + \epsilon_t
+$$
+
+Back substitute:
+
+$$
+\hat{y_t} = \sum_{i=0}^{\infty} \left( \beta^i \epsilon_{t-i} \right)
+$$
+
+This is a special case of an infinite moving average. Note the weights are NOT constant -- they decline geometrically, $\theta_i = \beta^i$.
+
+Also notice from above, the MA(1) is a special case of an infinite AR process.
+
+Like the MA, $y$ is only defined if $|\beta| < 1$.
+
+$$
+E(\hat{y_t}) = E\left( \sum_{i=0}^{\infty} \left( \beta^i \epsilon_{t-i} \right) \right) = 0 \Rightarrow E(y_t) = \mu
+$$
+
+Since $\mu$ is constant:
+
+$$
+\operatorname{var}(y_t) = \operatorname{var}(\hat{y_t}) = \operatorname{var}\left( \sum_{i=0}^{\infty} \left( \beta^i \epsilon_{t-i} \right) \right) = \sigma^2 \sum_{i=0}^{\infty} \beta^{2i} = \frac{\sigma^2}{1 - \beta^2}
+$$
+
+If $|\beta| = 1$ then the variance of $y$ is infinite. Greater than 1 and it is undefined as the variance cannot be negative.
+
+In our original equation, we had an intercept term, $c$:
+
+$$
+E(y_t) = E(c + \beta y_{t-1} + \epsilon_t)
+$$
+
+$$
+\mu = E(c) + \beta\mu \Rightarrow c = (1 - \beta)\mu \Rightarrow \mu = \frac{c}{1-\beta}
+$$
+
+Autocovariance:
+
+$$
+\gamma(k) = \beta \gamma(k-1) = \frac{\sigma^2 \beta^k}{1 - \beta^2}
+$$
+
+Autocorrelation:
+
+$$
+\rho(k) = \beta^k
+$$
+
+Here, too, we can see that if $|\beta| = 1$ the variance is infinite, and if it is greater than 1, the variance is undefined.
+
+$\beta$ determines the persistence of the correlation through time. A beta near 0 will quickly decay to 0, while a beta near 1 (or -1) will persist long into the future.
+
+Beta = 1 is a random walk.
+
+$\rho(k) = \beta^k$ decays but never reaches zero, which is the second row of @tbl-acfpacf. The PACF is the mirror image. Once the first lag is accounted for, nothing is left, so the PACF cuts off after lag 1.
+
+Example AR(1):
+
+![Simulated AR(1) with $\beta = 0.7$. The ACF decays as $\beta^k$; the PACF cuts off after lag 1](figures/ar1-example.png){#fig-ar1 width=100%}
+
+Compare @fig-ar1 to @fig-ma1. The ACF and PACF panels have traded places, which is @tbl-acfpacf drawn twice.
+
+## ARMA and Its Extensions
+
+AR and MA processes can be combined into ARMA(p,q) models -- a combination of AR(p) + MA(q).
+
+When we include additional regressor (exogenous) variables, we call this an ARMAX.
+
+If those other regressors are themselves serially correlated, this breaks other assumptions and we then have to estimate their ARMA process (with cross error effects) in a simultaneous equations model called VARMAX. V is for Vector. Usually you see these as VAR, vector autoregression, models without the MA component.
+
+Persistence in returns is what momentum is. $\rho(k) = \beta^k$ with $\beta > 0$ says a positive move makes the next move more likely to be positive, decaying geometrically, and that is the effect a momentum factor is built to capture. Week 07 and Week 09 both use momentum as a factor. Knowing the process that generates it is worth the derivation.
+
+My opinion: in risk work, the marginal value of moving past ARMA(1,1) on return data is small, and the higher order fits tend to look like overfitting rather than signal. The autocorrelation in returns is real but small. The variance is where most of the structure is, which is @sec-garch.
+
+## Fitting by Maximum Likelihood
+
+There are multiple ways to fit ARMA models. All are involved. Most statistics software has model fitting for these.
+
+For the MLE technique, we have to add the autocovariance matrix to the likelihood function.
+
+$$
+ll = -\frac{1}{2}\left( n \ln(2\pi) + \ln\left( \left| \Gamma(\theta,\beta) \right| \right) + X' \Gamma(\theta,\beta)^{-1} X \right)
+$$
+
+Where
+
+$$
+X = Y - \mu
+$$
+
+and $\Gamma(\theta,\beta)$ is the autocovariance matrix of size $(n \times n)$ implied by the values of the MA ($\theta$) and AR ($\beta$) parameters.
+
+We are finding the max of the function above for $\mu$, $\theta$, and $\beta$.
+
+The likelihood is given here so you know what is being maximized and what $\Gamma$ contributes. Do not implement it. Building $\Gamma$, inverting an $(n \times n)$ matrix at every step, and keeping the parameters inside the stationary region are all handled by any competent time series package, and a hand-rolled version will be slower and less stable. Use the fitting routine in your statistics package and spend your effort on whether the fitted model is the right one.
+
+Compare this to the log likelihood in @sec-mlenormal. The $\ln(\sigma^2)$ term has become $\ln|\Gamma|$ and the sum of squares has become a quadratic form in $\Gamma^{-1}$. It is the multivariate normal density from @sec-mvn, with the model supplying the covariance matrix instead of an estimate.
+
+# GARCH Models {#sec-garch}
+
+Another assumption that can break OLS regression is the constant variance of the errors. If the variance of the error term changes over time, this is called heteroskedasticity (homoscedasticity is constant variance).
+
+Return data breaks assumption 5 far more visibly than it breaks assumption 4. Large moves cluster. A 3% day is followed by another large day considerably more often than a quiet day is, and the effect persists for weeks rather than for a session or two. The pattern lives in the squared returns rather than in the returns themselves, which is why an ACF of returns looks like noise while an ACF of squared returns does not.
+
+One class of model to account for this is the GARCH model, where we apply the ARMA framework to the variance of the error term.
+
+$$
+\epsilon_t = y_t - \mu
+$$
+
+$$
+\epsilon_t = \sigma_t z_t \quad \text{where } z \sim N(0,1)\ iid
+$$
+
+Here, $z$ becomes our constant and uncorrelated error process.
+
+The GARCH(p,q) model is then
+
+$$
+\sigma_t^2 = \omega + \sum_{i=1}^{p} \left( \alpha_i \epsilon_{t-i}^2 \right) + \sum_{i=1}^{q} \left( \beta_i \sigma_{t-i}^2 \right)
+$$
+
+The $\alpha$ terms are the ARCH part, carrying the effect of a recent large move. The $\beta$ terms are the GARCH part, carrying the persistence of the variance level itself.
+
+## The Long Run Variance
+
+We can get the long run average variance by taking the expectation of both sides. For the GARCH(1,1) model:
+
+$$
+\sigma^2 = E\left( \sigma_t^2 \right) = E\left( \omega + \alpha \epsilon_{t-1}^2 + \beta \sigma_{t-1}^2 \right)
+$$
+
+$$
+\sigma^2 = \omega + \alpha \sigma^2 + \beta \sigma^2 = \frac{\omega}{1 - \alpha - \beta}
+$$
+
+This puts bounds on alpha and beta. Like the ARMA(1,1) coefficients, they must be less than 1. Also their sum must be less than 1, $\alpha + \beta < 1$.
+
+The condition is not a technicality. If $\alpha + \beta \geq 1$ the expression above is negative or undefined, and the model has no long run variance to revert to. Fitted values of $\alpha + \beta$ on daily equity data typically land between 0.95 and 0.99, which is close enough to the boundary that the estimated long run variance is unstable.
+
+## Forecasting
+
+The $k$ step ahead variance forecast follows from the same recursion:
+
+$$
+E\left( \sigma_{t+k}^2 \right) = \sigma^2 + (\alpha + \beta)^{k-1}\left( \sigma_{t+1}^2 - \sigma^2 \right)
+$$
+
+The forecast decays from the current variance toward the long run level at rate $\alpha + \beta$, so the persistence parameter that made the long run variance unstable is the same parameter that sets how long a shock stays in the forecast. At $\alpha + \beta = 0.97$ the half life is roughly 23 days, which is why a volatility spike takes about a month to work its way out.
+
+Setting $\omega = 0$ and $\alpha + \beta = 1$ removes the long run variance entirely and leaves an exponentially weighted average of squared returns. That is the RiskMetrics estimator, and Week 03 covers it directly.
+
+GARCH models are fit by maximum likelihood, using the machinery of @sec-mle. The likelihood is the normal density evaluated at $\epsilon_t / \sigma_t$, with $\sigma_t$ generated recursively from the parameters being fit.
+
+The same advice applies as for ARMA. Use your statistics package. The recursion needs a starting value for $\sigma_0^2$, the optimizer has to respect $\omega > 0$, $\alpha \geq 0$, $\beta \geq 0$, and $\alpha + \beta < 1$, and the likelihood surface is flat enough near the boundary that a naive optimizer will wander out of it.

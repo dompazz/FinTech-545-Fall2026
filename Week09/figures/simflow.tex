@@ -1,0 +1,36 @@
+\documentclass[border=6pt]{standalone}
+\usepackage{tikz}
+\usepackage{amsmath}
+\usetikzlibrary{arrows.meta,positioning,fit,backgrounds}
+\begin{document}
+\begin{tikzpicture}[>=Stealth,font=\small,node distance=6mm,
+  bx/.style={draw,rounded corners=2pt,align=center,inner sep=4pt,minimum height=11mm,minimum width=27mm},
+  fac/.style={bx,fill=orange!20},
+  idio/.style={bx,fill=green!16},
+  asset/.style={bx,fill=blue!12},
+  out/.style={bx,fill=black!10},
+  lbl/.style={font=\footnotesize\itshape}]
+
+\node[fac]  (f1) at (0,1.5)  {fit / simulate\\$m$ factor returns};
+\node[idio] (e1) at (0,-1.3) {simulate $n$ \emph{independent}\\idiosyncratic draws};
+
+\node[lbl,align=center,anchor=south] at (0,2.35)
+  {joint model lives here\\{\footnotesize (t-margins + copula, GARCH, \dots)}};
+\node[lbl,align=center,anchor=north] at (0,-2.15) {no copula needed --- $D$ is diagonal};
+
+\node[asset] (r) at (4.9,0.1) {asset returns\\$r^{(s)} = B f^{(s)} + \varepsilon^{(s)}$};
+\node[out]   (p) at (9.3,0.1) {portfolio P\&L\\$P^{(s)} = w' r^{(s)}$};
+\node[out]   (v) at (13.3,0.1) {VaR / ES\\from the $S$ draws};
+
+\draw[->] (f1) -- (r);
+\draw[->] (e1) -- (r);
+\draw[->] (r)  -- (p);
+\draw[->] (p)  -- (v);
+
+\node[lbl,align=center] at (2.45,-2.9)
+  {$m$-dimensional joint simulation instead of $n$-dimensional:\\
+   $m=3$ vs $n=100$ here --- and the copula is fit on 3 series, not 100};
+
+\draw[dashed,black!45] (2.55,2.9) -- (2.55,-2.35);
+\end{tikzpicture}
+\end{document}
