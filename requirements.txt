@@ -1,0 +1,16 @@
+# Python packages needed to regenerate the figures.
+#
+#     pip install -r requirements.txt
+#
+# Only the `make figures` step needs these. The rendered PNGs are committed, so
+# building the notes from a fresh clone does not require Python at all -- until
+# you change a figure.
+#
+# The floors below are set by the APIs the scripts actually call, all of which
+# have been stable for years. Last verified against numpy 2.4, scipy 1.17,
+# pandas 3.0, and matplotlib 3.10.
+
+numpy>=1.24
+scipy>=1.10
+pandas>=1.5
+matplotlib>=3.6
