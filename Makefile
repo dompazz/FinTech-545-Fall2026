@@ -1,5 +1,6 @@
 # Build the FinTech 545 lecture notes.
 #   make          -> all PDFs (named from each .qmd's output-file)
+#   make book     -> the nine weeks assembled into one PDF, in book/
 #   make html     -> HTML versions
 #   make figures  -> recompile the TikZ figures to SVG and the data-driven PNGs
 #   make clean    -> remove rendered output
@@ -7,6 +8,11 @@ QMD := $(wildcard Week*/week*.qmd)
 
 all:
 	for f in $(QMD); do quarto render $$f --to pdf; done
+
+# The single-volume book. make_book.py regenerates book/book.qmd from the nine
+# weekly .qmd files, so the book always matches the weeks.
+book:
+	cd book && python3 make_book.py && quarto render book.qmd --to pdf
 
 html:
 	for f in $(QMD); do quarto render $$f --to html; done
@@ -24,7 +30,9 @@ figures:
 	cd Week09/figures && python3 make_figures.py
 
 clean:
+	rm -f book/book.qmd book/*.pdf book/*.html
+	rm -rf book/*_files
 	rm -f Week*/*.pdf Week*/*.html
 	rm -rf Week*/*_files Week*/figures/*.aux Week*/figures/*.log Week*/figures/*.pdf
 
-.PHONY: all html figures clean
+.PHONY: all book html figures clean
