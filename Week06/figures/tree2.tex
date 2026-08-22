@@ -1,0 +1,26 @@
+\documentclass[border=6pt]{standalone}
+\usepackage{tikz}
+\usetikzlibrary{positioning}
+\begin{document}
+\begin{tikzpicture}[>=stealth,font=\small,
+  nd/.style={draw,rounded corners=2pt,inner sep=4pt,minimum width=16mm,align=center}]
+  \node[nd] (s)   at (0,0)    {$S$};
+  \node[nd] (su)  at (3.6,1.7)  {$Su$};
+  \node[nd] (sd)  at (3.6,-1.7) {$Sd$};
+  \node[nd] (suu) at (7.6,3.4)  {$Su^{2}$};
+  \node[nd] (sud) at (7.6,0)    {$Sud$};
+  \node[nd] (sdd) at (7.6,-3.4) {$Sd^{2}$};
+  \draw[->] (s)  -- node[above,sloped,font=\footnotesize]{$p$}   (su);
+  \draw[->] (s)  -- node[below,sloped,font=\footnotesize]{$1-p$} (sd);
+  \draw[->] (su) -- node[above,sloped,font=\footnotesize]{$p$}   (suu);
+  \draw[->] (su) -- node[below,sloped,font=\footnotesize]{$1-p$} (sud);
+  \draw[->] (sd) -- node[above,sloped,font=\footnotesize]{$p$}   (sud);
+  \draw[->] (sd) -- node[below,sloped,font=\footnotesize]{$1-p$} (sdd);
+  \node[right=3mm of suu,font=\footnotesize] {$p_T=p^{2}$};
+  \node[right=3mm of sud,font=\footnotesize] {$p_T=2p(1-p)$};
+  \node[right=3mm of sdd,font=\footnotesize] {$p_T=(1-p)^{2}$};
+  \node[font=\footnotesize] at (0,-4.4)   {$t=0$};
+  \node[font=\footnotesize] at (3.6,-4.4) {$t=0.5$};
+  \node[font=\footnotesize] at (7.6,-4.4) {$t=1$};
+\end{tikzpicture}
+\end{document}

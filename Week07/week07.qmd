@@ -1,0 +1,507 @@
+---
+title: "Week 07 — American Options and Portfolio Construction"
+subtitle: "FinTech 545 --- Quantitative Risk Management"
+author: "Dominic Pazzula"
+format:
+  pdf:
+    output-file: "Week 07 - American Options and Portfolio Construction.pdf"
+    documentclass: scrartcl
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fig-pos: 'H'
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{etoolbox}
+        % Tables here are all short. Without this, longtable can place its
+        % header at the bottom of a page, break, and repeat the header on the
+        % next page with no rows under it. Require room for a few lines first.
+        \AtBeginEnvironment{longtable}{\Needspace*{8\baselineskip}}
+    number-sections: true
+    toc: true
+    toc-depth: 2
+  html:
+    output-file: "Week 07 - American Options and Portfolio Construction.html"
+    toc: true
+    html-math-method: katex
+---
+
+# American Options
+
+American options allow you to exercise the option at any time up to maturity. This gives the owner more choices about when to exercise. Remember that options have value, so we expect the price of an American option to be greater than or equal to the equivalent European option.
+
+$$
+Value_{American} \geq Value_{European}
+$$
+
+## When Early Exercise Pays
+
+Exercising early means the investor gives up whatever option value remains and takes the payoff function instead. For a call on a non-dividend-paying stock, the European value is always greater than the payoff function, so this trade is never worth making:
+
+$$
+Call\ Value_{American,t} \geq Call\ Value_{European,t} > \pi_t \ \ \ \forall\ t > 0
+$$
+
+When the option value exceeds the payoff, the investor is better off selling the option than exercising it. For calls on non-dividend payers this always holds, so an American call on a non-dividend-paying stock is worth exactly the same as the European call.
+
+For a call, this inequality holds unless there are underlying cash flows on the asset. In that case it might make sense to exercise in order to own the underlying and receive the cash flow. If the cash flow plus the payoff is greater than the value of the option, then early exercise makes sense. We work through the dividend case in @sec-div.
+
+Puts are different. As we saw last week, a deep in-the-money European put can be worth less than its payoff function, because the strike is only received at maturity and has to be discounted. That gap is the interest on the strike.
+
+An American put cannot trade there. Arbitrage forces its value to at least the payoff function:
+
+$$
+Put\ Value_{American,t} \geq \pi_t \ \ \ \forall\ t
+$$
+
+If it traded below, buy the option and exercise it immediately. You pay less than $X - S$ and receive exactly $X - S$, with no risk and no waiting. Anyone can do that, so the price never gets there.
+
+That bound is what the early exercise right is worth. The European put is free to sink below its payoff and does. The American put is held up at the payoff by arbitrage, and the difference between the two is the early exercise premium.
+
+So early exercise of an American put can be optimal even with no dividend at all.
+
+## The Free Boundary
+
+There is no closed form for the American put for exactly this reason. The exercise decision defines a free boundary that has to be solved numerically.
+
+The boundary is a critical stock price $S^*$. For a given time remaining, exercise is optimal when the stock is below $S^*$, and it is optimal to hold above it. For the example below, with $X=100$, $r=8\%$, and $\sigma=30\%$, with $0.25$ years remaining, $S^*$ is about $81.63$.
+
+Two things make the boundary awkward. It is not known in advance, because it comes out of the same backward induction that produces the price, and it moves as the time remaining shrinks. Those two properties together are why the American put has no closed form while the European put does.
+
+A word of caution on the 2 step example that follows. Its early exercise node sits at $S=86.07$, which is *above* the true boundary of $81.63$, so a properly converged model would not exercise there. The coarse tree gets the right qualitative answer for the wrong reason. With this example's parameters the 2 step tree gives $6.4218$, while the converged American value is $6.8662$ against a European value of $6.4670$, so the true early exercise premium is about $0.40$, not the $0.91$ the 2 step tree implies. As always, use enough steps.
+
+## Valuing with a Binomial Tree
+
+American options, as well as Bermuda options, are typically valued using a binomial tree. Here we modify the European binomial tree method from last week.
+
+1. Construct the tree as before.
+2. Calculate the underlying price at each node instead of just the final nodes.
+3. At the maturity nodes, calculate the value of the option with the payoff function.
+4. Using backward induction, check whether it is optimal to exercise the option or to hold the current present value of the option from the nodes after.
+
+$$
+P_{i,j} = \max\left( \pi\left( S u^{i} d^{(j-i)} \right),\ e^{-r\Delta t}\left[ p P_{i+1,j+1} + (1-p) P_{i,j+1} \right] \right)
+$$
+
+Compare that to the European formula at the end of Week 06, which summed over terminal nodes only. The change is the $\max$, and it is the reason the European case has a closed form and this one does not. A sum can be evaluated. A sequence of $\max$ operations has to be walked.
+
+## Two Step Example
+
+American put, $N=2$, $T=0.5$, $S=100$, $X=100$, $r=b=0.08$, $\sigma=0.3$.
+
+$$
+u = e^{0.3\sqrt{0.25}} = 1.1618, \qquad d = e^{-0.3\sqrt{0.25}} = 0.8607, \qquad p = 0.5297
+$$
+
+![American put, 2 step tree. The down node at $j=1$ is exercised early.](figures/amput.svg){#fig-amput width=100%}
+
+- At $(j=2, i=0)$, the price of the put is just the payoff function. At all other $j=2$ nodes, the value of the put is 0.
+- At $(j=1, i=0)$, the price of the put is the maximum of the payoff and the present value of the forward option prices:
+    - $\pi = 100 - 86.0708 = 13.9292$
+    - $e^{-0.08 \cdot 0.25}\left( 0.5297 \cdot 0 + (1 - 0.5297) \cdot 25.9182 \right) = 11.94907$
+    - The option value is then $13.9292$ at this node
+- At $(j=0, i=0)$ the price of the put is:
+    - $\pi = 100 - 100 = 0$
+    - $e^{-0.08 \cdot 0.25}\left( 0.5297 \cdot 0 + (1 - 0.5297) \cdot 13.9292 \right) = 6.4218$
+
+The value of the option is $6.4218$.
+
+@fig-amput marks the exercised node. The early exercise happened at exactly one place in the tree, and it changed the root value because the larger number propagated backwards. That is the whole mechanism, and it is the only difference from last week. Everything else in the tree is the European calculation.
+
+# American Options with Discrete Dividends {#sec-div}
+
+For index options, options on a basket of stocks, the continuously compounded dividend approach we have taken before generally works well. The basket of stocks pay their dividends at different times and they accrue to the index slowly.
+
+However, single stocks pay dividends at a discrete time at a set value, not a rate, causing a discontinuity in the share price. When a dividend is paid, the price of the stock will adjust downward by the amount of the dividend.
+
+## Why the Tree Stops Recombining
+
+That discontinuity causes a problem in the binomial tree. Because the dividend is a set amount, the percentage change in stock price is different for each node. This causes the tree to no longer recombine after the dividend is paid.
+
+Recall from Week 06 that recombination came from $ud = 1$, so an up move followed by a down move returned exactly to the starting price. Subtracting a fixed dollar amount at one date breaks that identity, because the same dollar is a different percentage at each node.
+
+American call, $N=2$, $T=0.5$, dividend of $1.00$ at $t=0.25$, $S=100$, $X=100$, $r=b=0.08$, $\sigma=0.3$.
+
+$$
+u = e^{0.3\sqrt{0.25}} = 1.1618, \qquad d = e^{-0.3\sqrt{0.25}} = 0.8607, \qquad p = 0.5297
+$$
+
+![A discrete dividend breaks recombination: each $j=1$ node spawns its own subtree.](figures/divtree.svg){#fig-divtree width=95%}
+
+Each dividend paid at $j = n$ creates $n+1$ new trees. The logic from before holds with a twist. In the case of a call, exercising at $j = n$ gets the holder the value of the stock plus the dividend. In the case of a put, the holder can exercise the put, forgoing the dividend. Either way, the payoff is the same as before, $\pi\left( S_n + D_n \right)$, which is the payoff if the dividend had not occurred.
+
+The cost of @fig-divtree is worth noting. The node count is back to growing like $2^N$ after the dividend date, so a tree with several dividends and a realistic number of steps becomes expensive quickly.
+
+## When Early Exercise Is Optimal
+
+In practice, only call options are exercised early to receive the dividend. Hull, Chapter 15 page 340, shows that exercise is optimal when
+
+$$
+D_n > X\left( 1 - e^{-r\left( T - t_n \right)} \right)
+$$
+
+Where $t_n$ is the time dividend $D_n$ is paid.
+
+Read the right hand side as the interest earned on the strike between the dividend date and maturity. Exercising early hands over the strike sooner, so the dividend has to be worth more than the interest given up.
+
+Apply that test to the example above. With $D_n = 1.00$, $X = 100$, $r = 8\%$, and $T - t_n = 0.25$, the right hand side is $X\left(1 - e^{-0.08(0.25)}\right) = 1.98$. Since $1.00 < 1.98$, this dividend is too small to justify early exercise. The example is here to show what a discrete dividend does to the geometry of the tree, not to show an optimal early exercise. Raise the dividend above $1.98$ and the call would be exercised at $t_n$.
+
+## Implementing the Non-Recombining Tree
+
+Implementing the non-recombining tree is an exercise in recursion. This method can handle multiple dividends.
+
+1. If there are no dividends during the life of the option, use the recombining tree method previously implemented.
+2. Construct the nodes up to the first dividend payment. For each node:
+    a. Value no exercise. Recursively call the non-recombining tree with the stock price minus the dividend and any remaining dividends to be paid.
+    b. Value exercise. The payoff function with the price before the dividend.
+3. Using backward induction, find the value at the starting node.
+
+There are many ways to tackle the problem of discrete cash flows. Binomial trees that allow for non-recombining are the most generic and let you apply the method to many problems.
+
+# The Greeks
+
+Option Greeks, or sensitivities, are the partial derivatives of the pricing function with respect to one of the input variables.
+
+These sensitivities are important because they approximate the change in the option value for changes to the inputs. Changing inputs, such as the underlying price or the implied volatility, cause risk to holding the option. Having a way to judge approximate changes to those inputs allows hedging of options risk.
+
+Delta is the same object as the $\delta$ in Week 04's Delta Normal VaR. The gradient we built there needed the first derivative of every position with respect to every underlying price, and for an option that derivative is the delta below.
+
+## The Main Greeks
+
+The most used Greeks are listed below along with their formula from the generalized BSM formula from last week. This list is not exhaustive. People who trade options or make markets often look at additional cross partial derivatives to understand the risk in their portfolio.
+
+| Greek | Definition | Call | Put |
+|:--|:--|:--|:--|
+| Delta, $\Delta$ | $\frac{\partial P}{\partial S}$ | $e^{(b-r)T}\Phi(d_1)$ | $e^{(b-r)T}\left( \Phi(d_1) - 1 \right)$ |
+| Gamma, $\Gamma$ | $\frac{\partial^2 P}{\partial S^2}$ | $\frac{f(d_1) e^{(b-r)T}}{S\sigma\sqrt{T}}$ | same as call |
+| Vega | $\frac{\partial P}{\partial \sigma}$ | $S e^{(b-r)T} f(d_1)\sqrt{T}$ | same as call |
+| Rho, $\rho$ | $\frac{\partial P}{\partial r}$ | $T X e^{-rT}\Phi(d_2)$ | $-T X e^{-rT}\Phi(-d_2)$ |
+| Carry Rho | $\frac{\partial P}{\partial b}$ | $T S e^{(b-r)T}\Phi(d_1)$ | $-T S e^{(b-r)T}\Phi(-d_1)$ |
+
+: The most used Greeks under the generalized BSM {#tbl-greeks tbl-colwidths="[14,14,32,40]"}
+
+$f(x)$ is the normal PDF and $\Phi(x)$ is the normal CDF. Gamma is also called convexity. The Rho formulas in @tbl-greeks are for Black Scholes, where $r = b$.
+
+Theta is the derivative with respect to time to maturity, $-\frac{\partial P}{\partial T}$. The derivative is negative but is often expressed as a positive number, and it is also called theta decay. The formulas are too long for the table:
+
+$$
+\Theta_{call} = -\frac{S e^{(b-r)T} f(d_1) \sigma}{2\sqrt{T}} - (b-r) S e^{(b-r)T}\Phi(d_1) - r X e^{-rT}\Phi(d_2)
+$$
+
+$$
+\Theta_{put} = -\frac{S e^{(b-r)T} f(d_1) \sigma}{2\sqrt{T}} + (b-r) S e^{(b-r)T}\Phi(-d_1) + r X e^{-rT}\Phi(-d_2)
+$$
+
+Two patterns in @tbl-greeks are worth committing to memory. Gamma and vega are identical for a call and a put at the same strike, which follows directly from put call parity, since the difference between the two is $S - Xe^{-rT}$ and that has no second derivative in $S$ and no derivative in $\sigma$ at all. And every formula carries $f(d_1)$ or $\Phi(d_1)$, so a single evaluation of the pricing function produces all of them.
+
+## Hedging Example
+
+A market maker sells 100 call options that expire in 15 trading days for \$2.50. The stock price is \$100.50, the strike price is \$100, the risk free rate is 25bp, and the stock does not pay a dividend. The market maker uses the GBSM model for pricing his options.
+
+What is the 1 day VaR and ES for this position using a simulated normal?
+
+The market maker hedges his position by buying stock equal to negative his delta. What is his new 1 day VaR and ES?
+
+The hedge removes the first order exposure and leaves the second order exposure behind. A short call position is short gamma, so the delta hedged book loses on a large move in either direction, and its VaR does not go to zero no matter how precisely the delta is matched. Compare the two answers rather than just reporting the second one.
+
+## Numerical Derivatives
+
+Not all option valuation routines have closed form derivative solutions. An American option priced on a tree is the obvious case -- there is no formula to differentiate. In the case where an explicit solution is not found, a numerical method should be used. The simplest method is a finite difference. Other methods such as [automatic differentiation](https://en.wikipedia.org/wiki/Automatic_differentiation) may be available and faster or more accurate.
+
+$$
+f'(x) \approx \frac{f(x+\Delta) - f(x-\Delta)}{2\Delta}, \qquad \lim_{\Delta \to 0}\frac{f(x+\Delta) - f(x-\Delta)}{2\Delta} = \frac{\partial f}{\partial x}
+$$
+
+Given a small enough choice of $\Delta$, the finite difference approximation for the first derivative, assuming a smooth differentiable surface, is close enough.
+
+The drawback is that we have had to evaluate the function 2 times. For some valuation methods, this can be a significant computing cost burden.
+
+Using a backward or forward difference instead of the central difference above reduces the computational burden, but comes at a cost of accuracy.
+
+Forward differencing:
+
+$$
+f'(x) \approx \frac{f(x+\Delta) - f(x)}{\Delta}, \qquad \lim_{\Delta \to 0}\frac{f(x+\Delta) - f(x)}{\Delta} = \frac{\partial f}{\partial x}
+$$
+
+Assuming we have already evaluated the function $f(x)$ to get the current value of the option, we only need 1 more evaluation.
+
+![Forward, backward, and central difference approximations](figures/finite-difference.png){#fig-finitediff width=90%}
+
+@fig-finitediff shows why the central difference is worth the extra evaluation. The forward and backward secants both sit visibly off the tangent, and they miss in opposite directions. The central difference averages the two and the leading error term cancels.
+
+Calculating a second derivative, such as gamma, is simply the first derivative of the first derivative.
+
+$$
+f''(x) \approx \frac{\frac{f(x+\Delta) - f(x)}{\Delta} - \frac{f(x) - f(x-\Delta)}{\Delta}}{\Delta} = \frac{f(x+\Delta) + f(x-\Delta) - 2f(x)}{\Delta^2}
+$$
+
+Choosing $\Delta$ is a real trade. Too large and the approximation error dominates. Too small and the subtraction in the numerator loses precision, since we are differencing two nearly equal floating point numbers and then dividing by something small. The second derivative divides by $\Delta^2$, which makes it considerably more sensitive to that choice than the first.
+
+# Portfolio Construction
+
+Portfolio construction is the art of balancing expected return against expected risk in a portfolio.
+
+Higher expected returns generally require taking higher risks.
+
+## The Efficient Frontier
+
+Every combination of the assets available to us produces a pair -- an expected return and a risk. Plotting all of them fills a region.
+
+![The efficient frontier](figures/frontier-generic.png){#fig-frontiergen width=85%}
+
+The efficient frontier is the left edge of that region above the minimum risk point, drawn solid in @fig-frontiergen. It is the graph of the maximum return achievable by a set of investments for a given level of risk. Equivalently, and this matters later, it is the minimum risk achievable for a given level of return.
+
+Nothing below the frontier is worth holding. For any portfolio strictly inside the shaded region there is one directly above it on the frontier with the same risk and more return. The dashed lower branch is the extreme case -- same risk as a point on the solid branch, less return.
+
+Only the upper branch is efficient. The minimum risk portfolio is where the two branches meet, and it is the leftmost point anyone can reach.
+
+## The Markowitz Problem
+
+The father of modern portfolio theory is Harry Markowitz. Professor Markowitz won the 1990 Nobel Prize in Economics for his work.
+
+Markowitz assumed multivariate normality. Risk is the variance of the portfolio. The optimization problem is constructed as a quadratic problem:
+
+$$
+\max\ U(w) = w\mu^T - \frac{1}{2}\lambda\, w\Sigma w^T
+$$
+
+$$
+s.t.\ \sum_{1}^{n} w_i = 1
+$$
+
+Where $U$ is the utility of the portfolio's risk and return, $w$ are the weights of the portfolio constituents, $\mu$ is the vector of expected returns, $\Sigma$ is the covariance of returns, and $\lambda$ is a risk aversion parameter.
+
+$w\Sigma w^T$ is fact 7 from Week 02 again. The entire optimization is that one quadratic form, traded against a linear term.
+
+This setup trades off risk with return for a given investor's risk tolerance. Solving this optimization for different levels of $\lambda$ will give us points along the efficient frontier.
+
+In practice, we do not have a quadratic utility function and asking someone their "$\lambda$" value is nonsensical.
+
+## The Minimum Variance Form
+
+We can, however, reform the problem. Invert the graph. Recognize that each maximum return for a given level of risk is the same as the minimum risk for a given level of return.
+
+$$
+\min\ \sigma^2 = w\Sigma w^T
+$$
+
+$$
+s.t.\ \sum_{1}^{n} w_i = 1, \qquad w\mu^T = R
+$$
+
+This is still a quadratic problem and is easily solved. Often we will put bounds on the values of the portfolio weights to either disallow shorting, meaning negative weights, or to limit the amount short. These boundaries take the form of additional linear constraints.
+
+The two forms trace the same curve. The first sweeps it out by varying $\lambda$ and the second by varying $R$, and both are quadratic programs with linear constraints. The second is the one to implement, because $R$ is a number an investor can actually state and $\lambda$ is not.
+
+### A Three Asset Example
+
+Plot the efficient frontier for a portfolio of 3 assets. Do not allow negative weights.
+
+| | A1 | A2 | A3 |
+|:--|--:|--:|--:|
+| A1 | 1 | 0.5 | 0 |
+| A2 | 0.5 | 1 | 0.5 |
+| A3 | 0 | 0.5 | 1 |
+| **Std dev** | 0.20 | 0.10 | 0.05 |
+| **$E(r)$** | 0.05 | 0.04 | 0.03 |
+
+: Correlations, standard deviations, and expected returns {#tbl-3asset tbl-colwidths="[28,24,24,24]"}
+
+Solve the minimum variance problem once for each level of $R$ between the lowest and highest achievable return. Each solve returns a weight vector, and each weight vector gives one point on the curve.
+
+![Efficient frontier for the 3 asset example, no shorting](figures/efficient-frontier.png){#fig-frontier width=85%}
+
+Note where the individual assets sit in @fig-frontier. A1 and A3 are on the frontier, because A1 is the only way to reach the highest return and A3 is close to the lowest risk available. A2 sits inside it, since a mix of A1 and A3 beats holding A2 alone. That is diversification doing its work, and it comes entirely from the zero correlation between A1 and A3.
+
+# The Sharpe Ratio and the Capital Market Line
+
+In the mid 1960s William Sharpe and others began publishing papers on portfolio theory that led to the Capital Asset Pricing Model (CAPM). Sharpe, along with Merton Miller, shared in the 1990 Nobel Prize with Harry Markowitz for this work. Sharpe also did work with binomial trees and their applications.
+
+Professor Sharpe developed a metric that has been named after him, the Sharpe Ratio:
+
+$$
+SR = \frac{E\left( r_p \right) - r_{rf}}{\sigma_p}
+$$
+
+The Sharpe Ratio compares the expected return on the portfolio in excess of the risk free rate to the risk of the portfolio, measured by standard deviation. It standardizes returns into units of risk.
+
+## Combining with the Risk Free Asset
+
+Investors will always prefer assets with a higher Sharpe Ratio. Assume borrowing and lending is possible at the risk free rate. An investor can choose either investment A or investment B, but not both.
+
+Risk free rate: 5%.
+
+- Investment A expects to return 10% per year with a 16% standard deviation. $SR = \frac{10-5}{16} = 0.3125$
+- Investment B expects to return 8% per year with a 10% standard deviation. $SR = \frac{8-5}{10} = 0.3000$
+
+The investor only wants to have 8% risk on his portfolio.
+
+Investment A. Invest 50% in investment A and 50% in the risk free asset:
+
+$$
+E(r) = 50\% \cdot 10\% + 50\% \cdot 5\% = 7.5\%
+$$
+
+$$
+Risk = \sqrt{0.5^2 \cdot 0.16^2 + 0.5^2 \cdot 0} = 8\%
+$$
+
+$$
+SR = \frac{7.5 - 5}{8} = 0.3125
+$$
+
+Investment B. Invest 80% in investment B and 20% in the risk free asset:
+
+$$
+E(r) = 80\% \cdot 8\% + 20\% \cdot 5\% = 7.4\%
+$$
+
+$$
+Risk = \sqrt{0.8^2 \cdot 0.1^2 + 0.2^2 \cdot 0} = 8\%
+$$
+
+$$
+SR = \frac{7.4 - 5}{8} = 0.3
+$$
+
+Investment A, with the higher Sharpe Ratio, should be chosen. For our given level of risk, we can achieve a higher level of return. Notice that each portfolio maintains the Sharpe Ratio of the investment when combined with the risk free asset.
+
+Further, if we wanted to achieve a risk higher than available in investment A, we could always borrow at the risk free rate and use that money to buy additional A.
+
+Borrow 50%:
+
+$$
+E(r) = 150\% \cdot 10\% + (-50\%) \cdot 5\% = 12.5\%
+$$
+
+$$
+Risk = \sqrt{1.5^2 \cdot 0.16^2 + (-0.5)^2 \cdot 0} = 24\%
+$$
+
+$$
+SR = \frac{12.5 - 5}{24} = 0.3125
+$$
+
+![Return versus risk for each investment combined with the risk free asset](figures/sharpe-line.png){#fig-sharpeline width=85%}
+
+Look at what determines each line in @fig-sharpeline. Two points fix it. The first is the risk free asset itself, at $\sigma = 0$ and $\mu = r_{rf}$, which is where the line starts. The second is the investment's own risk and return, $(\sigma_p, E(r_p))$, which is the marked point on the line.
+
+The slope between those two points is
+
+$$
+\text{slope} = \frac{E\left( r_p \right) - r_{rf}}{\sigma_p - 0} = SR
+$$
+
+The Sharpe Ratio is the slope of the line. That is not a coincidence or an analogy -- the definition of the ratio and the rise over run of the line are the same expression.
+
+Everything else about the picture follows. Every mix of the investment and cash lands somewhere on that line, so the Sharpe Ratio is preserved at every level of risk, and a higher ratio means a steeper line. At the 8% risk budget A sits above B, and it stays above at every level of risk, because a steeper line through the same intercept is above a shallower one everywhere to the right of it.
+
+### Why the Locus Is a Line
+
+The fact that this comes out straight is not an accident of the arithmetic. It follows from two of the risk measure properties in Week 05.
+
+**Positive homogeneity**, $q(\lambda X) = \lambda\, q(X)$. Holding a fraction $w$ of the risky investment scales its risk by exactly $w$, with no curvature.
+
+**The translation property.** Adding a certain amount to a portfolio does not change its dispersion, so the cash leg contributes nothing to $\sigma$.
+
+Put $w$ in the investment and $1-w$ in cash. The two properties give
+
+$$
+\sigma\left( w\, r_p + (1-w) r_{rf} \right) = w\, \sigma_p
+$$
+
+and the definition of the expectation gives
+
+$$
+E\left( w\, r_p + (1-w) r_{rf} \right) = r_{rf} + w\left( E(r_p) - r_{rf} \right)
+$$
+
+Both coordinates are linear in $w$. A locus whose two coordinates are both linear in the same parameter is a straight line, and dividing one slope by the other returns the Sharpe Ratio. Standard deviation behaving well under scaling and under adding cash is precisely why the picture is a line and not a curve.
+
+One caveat on terminology. Standard deviation satisfies subadditivity, positive homogeneity, and the translation property, but not monotonicity -- a portfolio that loses more in every state can still carry the lower standard deviation. That makes it a deviation measure rather than a coherent risk measure in the strict Artzner sense. The two properties used above are ones it does have.
+
+Try this with a measure that lacks either property and the line disappears. Variance is not positively homogeneous, since $\operatorname{var}(wX) = w^2 \operatorname{var}(X)$, so plotting the same picture against variance instead of standard deviation bends every one of these lines into a curve. That is the reason for the axis choice noted in @sec-cml.
+
+That is the whole comparison, and it sets up the next question. If the slope of the line is what we want to maximize, and we are choosing among all the portfolios on an efficient frontier rather than between two investments, which point on the frontier gives the steepest line out of $r_{rf}$?
+
+## The Capital Market Line {#sec-cml}
+
+Going back to the efficient frontier from before, this raises the question. What is the portfolio with the maximum Sharpe Ratio? Assume the risk free rate is 3.5%.
+
+Combining the fact that we can create a linear combination of a portfolio with the risk free asset and retain the portfolio's Sharpe Ratio, we can construct a portfolio that has a return greater than or equal to the efficient frontier return for all levels of risk.
+
+![The capital market line, tangent at the maximum Sharpe Ratio portfolio](figures/capital-market-line.png){#fig-cml width=85%}
+
+The straight line in @fig-cml is called the capital market line (CML). It is tangent to the efficient frontier at the point of the maximum Sharpe Ratio portfolio. This portfolio is sometimes called the super efficient portfolio, or the market portfolio.
+
+For the three assets in @tbl-3asset at a 3.5% risk free rate, the tangency portfolio is two thirds A1 and one third A2, with $\sigma = 0.153$, an expected return of $4.67\%$, and a Sharpe Ratio of $0.0764$. A3 drops out entirely, despite being the lowest risk asset available.
+
+Note that both @fig-frontier and @fig-cml plot risk as standard deviation rather than variance. The CML is a straight line in $(\sigma, \mu)$ space and a square root curve in $(\sigma^2, \mu)$ space, so the tangency argument only reads correctly against $\sigma$.
+
+Combining CAPM with the Efficient Market Hypothesis (EMH) leads to the conclusion that the market portfolio is the portfolio of all assets weighted by their current market capitalization.
+
+In practice, most investors cannot borrow at the risk free rate. Values on the CML above the market portfolio are unobtainable. Investors either have to borrow at higher rates, lowering the slope of the line above the market portfolio, or simply attempt to invest along the efficient frontier.
+
+## CAPM
+
+Under CAPM, rational investors will only invest in the market portfolio and the risk free asset. This presents a single source of systematic risk. The classic CAPM formula for decomposing the returns on a single asset is:
+
+$$
+r_s - r_{rf} = \alpha + \beta\left( r_{mkt} - r_{rf} \right) + \epsilon_s
+$$
+
+The excess return on the asset $s$ is a linear combination of the excess return on the market portfolio, an alpha value, and an idiosyncratic error term. In the long run, theory would say that $\alpha = 0$.
+
+That is an OLS regression, and everything in Week 02 applies to it. $\beta$ is a scaled covariance, the standard error on $\beta$ comes from the usual formula, and $\alpha$ is an intercept whose $t$-statistic is what anyone claiming skill has to clear.
+
+# Arbitrage Pricing Theory
+
+Proposed by Stephen Ross in 1976, Arbitrage Pricing Theory (APT) is a general theory of asset pricing that says financial assets can be modeled as a linear function of various sources of risk and return. These sources, or factors, of risk are systematic and each contribute to an asset's expected return.
+
+$$
+E\left( r_s - r_{rf} \right) = \alpha_s + \sum_{i=1}^{n} \beta_i E\left( f_i \right)
+$$
+
+$$
+E\left( f_i \right) = RP_i
+$$
+
+Each factor $f$ has an expected return $RP$, called its risk premium. This is the expected return in excess of the risk free rate for taking on the risk of that factor.
+
+CAPM is an APT model with 1 factor, the market risk factor:
+
+$$
+r_s - r_{rf} = \alpha + \beta\left( r_{mkt} - r_{rf} \right) + \epsilon_s
+$$
+
+These factors arise for different reasons. As we discussed above, reaching for additional return above the market portfolio, along with the inability to borrow at the risk free rate, is a leading theory for why certain types of stocks perform better over longer periods than CAPM and EMH would predict. Value stocks and stocks with low beta values both show long term positive alpha values.
+
+APT says nothing about what the factors are. It says only that if returns have a linear factor structure, then the absence of arbitrage forces expected returns into the form above. Choosing the factors is left as a separate problem, and it is the problem Week 09 is about.
+
+# Extensions to CAPM
+
+In 1993 Eugene Fama (Nobel Prize 2013) and Kenneth French published a paper which attempted to model known anomalies found when testing CAPM.
+
+Specifically, they added risk factors for value and size. It was easy to see in historic returns that stocks with a low price to book ratio and stocks with a lower market cap outperformed. Fama and French did not attempt to specify why the anomalies exist, only to model their return.
+
+To do this, they constructed market neutral portfolios for each factor. The value factor would be long value stocks and short expensive stocks. They called this High (book to price) Minus Low (book to price), or HML. The small factor would be long small stocks and short large stocks. This they named Small Minus Big, or SMB.
+
+$$
+r_s - r_{rf} = \alpha + \beta_{mkt}\left( r_{mkt} - r_{rf} \right) + \beta_{SMB}SMB + \beta_{HML}HML + \epsilon_s
+$$
+
+In 1997 Mark Carhart published an extension to Fama French adding a momentum factor. Momentum is the tendency of assets that have recently done well to continue doing well. Week 02 gave the process behind it -- an autoregressive term with $\beta > 0$ makes a positive move more likely to be followed by another. The UMD (up minus down) factor is long high momentum stocks and short low momentum stocks.
+
+$$
+r_s - r_{rf} = \alpha + \beta_{mkt}\left( r_{mkt} - r_{rf} \right) + \beta_{SMB}SMB + \beta_{HML}HML + \beta_{UMD}UMD + \epsilon_s
+$$
+
+Over the years, academics have debated these factors and attempted to find new ones. Most agree that size is no longer a priced factor. Fama and French argue that their original HML value factor can be decomposed into 2 factors, companies that are profitable, RMW, and companies that invest in their business, CMA.
+
+Some researchers have attempted to revive the value factor by moving away from book value. In an age of technology, a lot of a company's value does not accrue to the accounting book value. In the last 10 or more years value has significantly underperformed, leading some researchers to ask if it should be considered a factor at all.
+
+Quality businesses, where RMW and CMA were early attempts at quality, are considered by some to be a priced factor. Like value, there is no good single definition of quality.
+
+Every model in this section takes the factors as given and estimates the betas. Week 08 uses them to attribute realized risk and return. Week 09 builds the factors.

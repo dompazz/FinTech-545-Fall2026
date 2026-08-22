@@ -1,0 +1,627 @@
+---
+title: "Week 08 — Attribution and Risk Parity"
+subtitle: "FinTech 545 --- Quantitative Risk Management"
+author: "Dominic Pazzula"
+format:
+  pdf:
+    output-file: "Week 08 - Attribution and Risk Parity.pdf"
+    documentclass: scrartcl
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fig-pos: 'H'
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{etoolbox}
+        % Tables here are all short. Without this, longtable can place its
+        % header at the bottom of a page, break, and repeat the header on the
+        % next page with no rows under it. Require room for a few lines first.
+        \AtBeginEnvironment{longtable}{\Needspace*{8\baselineskip}}
+    number-sections: true
+    toc: true
+    toc-depth: 2
+  html:
+    output-file: "Week 08 - Attribution and Risk Parity.html"
+    toc: true
+    html-math-method: katex
+---
+
+# Risk and Return Attribution
+
+Attribution analysis attempts to find the contribution to return or risk from underlying factors. This is either done ex-post or ex-ante.
+
+Ex-post looks at realized risk and return. That is, how much did this stock contribute to the total return of the portfolio and to the realized standard deviation?
+
+Ex-ante looks at assumed forward distributions and finds the contributions to expected risk and return.
+
+Week 07 built portfolios. This week takes a portfolio apart and asks where its risk and its return actually came from, which is the question anyone who has to explain a quarter to a client is being asked. The two exercises use the same machinery run in opposite directions.
+
+## The Decomposition
+
+We do this by estimating the first derivative and using the fact:
+
+$$
+f(x) \approx \sum_{i}^{n} x_i \frac{\partial f}{\partial x_i}
+$$
+
+That relation is better than an approximation for the cases we care about. Euler's homogeneous function theorem says that if $f$ is homogeneous of degree 1, meaning $f(\lambda x) = \lambda f(x)$, then
+
+$$
+f(x) = \sum_{i}^{n} x_i \frac{\partial f}{\partial x_i}
+$$
+
+exactly, with no error term. Positive homogeneity is the property from Week 05 and Week 07, and both risk measures we use here have it -- portfolio standard deviation and expected shortfall are both homogeneous of degree 1 in the weights. So the contributions add to the total exactly, and any residual in your code is an arithmetic error rather than a modeling one.
+
+## Return Attribution
+
+For return this is easy. The portfolio return is the sum of the weights times the arithmetic returns. The derivative of the portfolio return with respect to factor $i$ is just the factor weight:
+
+$$
+R_t = \sum_{i}^{n} r_{i,t} w_{i,t}
+$$
+
+So for any given time $t$, the contribution to return for factor $i$ is $w_i r_i$.
+
+Arithmetic returns are the right choice here for the reason given in Week 04. They are additive across assets inside a period, which is exactly what an attribution needs.
+
+## Linking Through Time
+
+The individual time period return and its attribution is an arithmetic return. Arithmetic returns are not summable across time. The total return is not the sum of individual period returns, so the total attribution for a factor is not the sum of the individual period contributions. We need a way to link individual time period returns.
+
+There are a few methods, each with their own pros and cons. The most straightforward is Cariño's K.
+
+The arithmetic total return:
+
+$$
+R = \left[ \prod_{t}^{T} \left( 1 + R_t \right) \right] - 1
+$$
+
+The geometric total return:
+
+$$
+GR = \ln(R + 1)
+$$
+
+Let $K$ be the ratio between the two:
+
+$$
+K = \frac{GR}{R}
+$$
+
+Create a vector of $k_t$:
+
+$$
+k_t = \frac{\ln\left( R_t + 1 \right)}{K R_t}
+$$
+
+By construction:
+
+$$
+R = \sum_{t}^{T} R_t k_t
+$$
+
+That construction is worth checking once by hand. Substituting $k_t$ gives $\frac{1}{K}\sum_t \ln(1+R_t)$, the sum of logs is the log of the product, and the log of the product is $GR$. So the sum is $GR / K = R$.
+
+The $k$ vector provides a scaling factor for each day. Because the factor component returns are summable inside the period:
+
+$$
+R = \sum_{t}^{T} k_t \sum_{i}^{n} w_{i,t} r_{i,t}
+$$
+
+The total attribution of return for factor $i$ is then
+
+$$
+A_i = \sum_{t}^{T} k_t w_{i,t} r_{i,t}
+$$
+
+## Calculating Weights Through Time
+
+Unless we rebalance the portfolio every time period, the weights of each factor will move with market movements. We need the weight at each time period to calculate the ex-post return attribution. Luckily this is straightforward to calculate.
+
+First grow the weight by the time period return:
+
+$$
+w_{i,t}^{*} = w_{i,t}\left( 1 + r_{i,t} \right)
+$$
+
+By definition, the portfolio return at time $t$ is
+
+$$
+R_t = \left( \sum_{i}^{n} w_{i,t}^{*} \right) - 1
+$$
+
+Normalize the updated weights to get the next period's starting weight:
+
+$$
+w_{i,t+1} = \frac{w_{i,t}^{*}}{R_t + 1}
+$$
+
+This gives us a way to calculate the individual portfolio returns at each time period while calculating the individual time period weights.
+
+Do not skip this step and use the starting weights throughout. A position that doubles while the rest of the book is flat carries a very different weight at the end of the period than it did at the start, so attributing its later returns at the original weight misstates every line of the report, and it does so without producing any error large enough to notice.
+
+# Risk Attribution
+
+In this section we will look at risk as defined as portfolio volatility.
+
+$$
+\sigma_p = \sqrt{w'\Sigma w}
+$$
+
+Given the formula at the start of the notes:
+
+$$
+f(x) = \sum_{i}^{n} x_i \frac{\partial f}{\partial x_i}
+$$
+
+We need to find the derivative of volatility with respect to $w$. You are welcome to solve this by hand. I will just give it to you:
+
+$$
+\frac{\partial \sigma_p}{\partial w} = \frac{\Sigma w}{\sqrt{w'\Sigma w}}
+$$
+
+This is the gradient. For an individual $w_i$ take the $i^{th}$ row.
+
+$$
+\frac{\partial \sigma_p}{\partial w_i} = \frac{1}{\sigma_p}\sum_{j}^{n}\left( w_j \Sigma_{i,j} \right)
+$$
+
+So the vector of component volatilities is:
+
+$$
+CSD = w\, \#\, \frac{\Sigma w}{\sqrt{w'\Sigma w}}
+$$
+
+Where $\#$ is the element wise multiplication operator.
+
+Note what $CSD$ is not. It is not the risk of holding position $i$ on its own, and the components do not add up to the sum of the individual position volatilities. They add to the portfolio volatility, which is the smaller number. The difference between the two is diversification, and the gradient has allocated it across the positions rather than leaving it as an unexplained residual.
+
+## The Regression Interpretation
+
+This gives us a way to do ex-ante risk attribution. For ex-post we need to recognize something about the formula for an individual derivative.
+
+$$
+\frac{\partial \sigma_p}{\partial w_i} = \frac{1}{\sigma_p}\sum_{j}^{n}\left( w_j \Sigma_{i,j} \right)
+$$
+
+The summation is the definition of:
+
+$$
+\sum_{j}^{n}\left( w_j \Sigma_{i,j} \right) = \operatorname{cov}(x_i, p)
+$$
+
+Therefore:
+
+$$
+\frac{\partial \sigma_p}{\partial w_i} = \frac{\operatorname{cov}(x_i,p)}{\sigma_p} \Rightarrow RA_i = \frac{w_i \operatorname{cov}(x_i,p)}{\sigma_p} = \frac{\operatorname{cov}(w_i x_i, p)}{\sigma_p}
+$$
+
+Remember the formula for the OLS $\beta$, where the denominator is the variance of the regressor:
+
+$$
+\beta = \frac{\operatorname{cov}(y, x)}{\sigma_x^2}
+$$
+
+So the risk attribution is the regression coefficient of the weighted returns regressed on the portfolio return, multiplied by the portfolio standard deviation:
+
+$$
+w_i x_i = c + \beta_{i,p}\, p + \epsilon
+$$
+
+$$
+RA_i = \frac{\operatorname{cov}(w_i x_i, p)}{\sigma_p} = \sigma_p \beta_{i,p}
+$$
+
+That last line is the practical one. Ex-ante risk attribution needs a covariance matrix. Ex-post needs only a series of realized returns and a regression, which is Week 02 machinery applied to a question Week 02 never asked.
+
+Read $\beta_{i,p}$ directly as a share. Dividing both sides by $\sigma_p$:
+
+$$
+\frac{RA_i}{\sigma_p} = \beta_{i,p}
+$$
+
+The beta of position $i$ against the portfolio is the fraction of total portfolio risk attributable to that position. A beta of 0.30 means the position accounts for 30% of the portfolio's volatility, whatever the portfolio's volatility happens to be.
+
+That reading is consistent because the betas sum to 1. Regressing the portfolio on itself gives a coefficient of 1, and the regression is linear in its dependent variable, so the individual betas must add to that. Shares that sum to 1 are shares. It is also a free check on the arithmetic.
+
+## Problem 1
+
+Part 1. Construct the maximum Sharpe Ratio portfolio for AAPL, MSFT, BRK-B, CSCO, and JNJ, then attribute its realized return.
+
+The expected returns come from the factor model rather than from the sample means of the stocks, for the reason given in @sec-rb -- a sample mean estimated from a few years of daily data is too noisy to feed an optimizer. The construction is:
+
+1. Join the daily Fama French 3 factor file to the momentum file on date, and divide the factor columns by 100 to convert from percent. Join that to `DailyReturn.csv`.
+2. Regress each stock's daily returns on $[\text{Mkt-RF},\ \text{SMB},\ \text{HML},\ \text{Mom}]$ with an intercept, by OLS over the joined history. Keep the four betas per stock and discard the intercept.
+3. Estimate each factor's expected daily return as its mean over the last 10 years of factor history.
+4. Build expected stock returns from the loadings, converted to geometric and annualized at 255 trading days:
+
+$$
+\mu_i = 255 \cdot \ln\left( 1 + \sum_{j} \beta_{i,j} E(f_j) \right)
+$$
+
+5. Build the covariance matrix from the log returns of the stocks themselves, annualized the same way:
+
+$$
+\Sigma = 255 \cdot \operatorname{cov}\left( \ln(1 + Y) \right)
+$$
+
+6. Maximize the Sharpe Ratio subject to $\sum w_i = 1$ and $w_i \geq 0$, at a risk free rate of 25bp. This is a non-linear objective, so it needs a solver rather than a closed form.
+
+Note what came from where. The betas and the expected returns came from the factor model. The covariance came from the stock returns directly.
+
+The factor model is not needed for the covariance here. We are assuming multivariate normality, and a multivariate normal is completely described by $\mu$ and $\Sigma$, so there is nothing to gain from decomposing $\Sigma$ into a factor covariance and a matrix of idiosyncratic variances. Estimating those two pieces separately would only add estimation error to a quantity we can already get in one step.
+
+The sample covariance is enough because the series is far longer than the number of assets. Five stocks against several years of daily observations leaves $T \gg n$, so $\Sigma$ is full rank and comfortably estimated, and every concern from Week 03 about singular covariance matrices is absent.
+
+That is not true in general, and it is the first thing to check before reusing this setup. Once the number of assets approaches the length of the series, the sample covariance degrades and then fails outright. Week 09 takes up that case and is where the factor structure earns its keep on the covariance side as well as the mean side.
+
+Use the returns from the end of the history (1-14) until the end of February for the attribution window.
+
+Calculate the ex-post return attribution for each stock.
+
+(See code)
+
+| Stock | Weight |
+|:--|--:|
+| AAPL | 10.076% |
+| MSFT | 20.951% |
+| BRK-B | 43.839% |
+| CSCO | 8.118% |
+| JNJ | 17.015% |
+
+: Optimal weights, maximum Sharpe Ratio portfolio {#tbl-p1weights tbl-colwidths="[50,50]"}
+
+| | AAPL | MSFT | BRK-B | CSCO | JNJ | Portfolio |
+|:--|--:|--:|--:|--:|--:|--:|
+| Total Return | -4.47% | -3.48% | -0.83% | -9.11% | -1.32% | -2.51% |
+| Return Attribution | -0.46% | -0.71% | -0.37% | -0.75% | -0.22% | -2.51% |
+
+: Ex-post return attribution {#tbl-p1return tbl-colwidths="[26,12,12,13,12,12,13]"}
+
+Read the two rows of @tbl-p1return against each other. CSCO had the worst total return at $-9.11\%$, but MSFT contributed more to the portfolio loss, because MSFT was held at more than twice the weight.
+
+Part 2. Using the same data as part 1, add the risk attribution for each stock.
+
+(See code)
+
+| | AAPL | MSFT | BRK-B | CSCO | JNJ | Portfolio |
+|:--|--:|--:|--:|--:|--:|--:|
+| Total Return | -4.47% | -3.48% | -0.83% | -9.11% | -1.32% | -2.51% |
+| Return Attribution | -0.46% | -0.71% | -0.37% | -0.75% | -0.22% | -2.51% |
+| Vol Attribution | 0.16% | 0.32% | 0.48% | 0.09% | 0.14% | 1.19% |
+
+: Return and risk attribution together {#tbl-p1both tbl-colwidths="[26,12,12,13,12,12,13]"}
+
+The volatility attribution row of @tbl-p1both adds to $1.19\%$, the portfolio volatility, not to the sum of the five individual volatilities. That is Euler's theorem doing its work.
+
+# Attribution to a Factor
+
+In the above sections, we attributed risk and return to the underlying position. If we used something like the Fama French factors to describe our portfolio, how would we do the attribution?
+
+Assume you have $m$ factors and $n$ assets.
+
+$$
+x_i = \alpha + \beta_i F + \epsilon
+$$
+
+$$
+\beta_i F = \sum_{j}^{m} \beta_{i,j} F_j
+$$
+
+Because of the $\alpha$ and $\epsilon$ in the regression, the attribution to the factors will not be perfect, unless $\alpha = 0$ and $\sigma_e = 0$. We have to account for this error.
+
+$$
+e_i = \alpha_i + \epsilon_i
+$$
+
+The portfolio can be written as:
+
+$$
+p = \sum_{i}^{n} w_i \left( \beta_i F + e_i \right)
+$$
+
+$$
+p = \sum_{i}^{n} w_i \sum_{j}^{m} \beta_{i,j} F_j + \sum_{i}^{n} w_i e_i
+$$
+
+Depending on the requirements, we can calculate the error attribution to each asset, or take the sum and treat the error as a single factor for the portfolio. Often in ex-post analysis, we call this total the portfolio alpha.
+
+$$
+\alpha_p = \sum_{i}^{n} w_i e_i
+$$
+
+Notice that the residual gets two different names depending on which attribution is being reported, and that both are describing the same $e_i$.
+
+On the return side it is the portfolio alpha. It is the part of the realized return that the factors did not explain, which is exactly what an active manager is being paid for and exactly what a client will ask about.
+
+On the risk side it is idiosyncratic risk, sometimes called specific or residual risk. It is the part of the realized volatility that did not come from factor exposure.
+
+We use alpha for both throughout these notes. Some practitioners use the idiosyncratic label for both, and plenty of reports use one term in the return table and the other in the risk table without saying so. Ask which is meant, particularly when the two tables sit on the same page.
+
+## Collapsing to Factor Weights
+
+We can simplify the problem by creating a new factor weight and rearranging the portfolio equation:
+
+$$
+w_j = \sum_{i}^{n} w_i \beta_{i,j}
+$$
+
+$$
+p = \sum_{j}^{m} w_j F_j + \alpha_p
+$$
+
+That substitution is the whole trick. A portfolio of $n$ assets has become a portfolio of $m$ factors plus a residual, and if $m < n$ the problem got smaller. Nothing after this point knows or cares that the factors are not assets.
+
+The first derivatives of this equation are straightforward and we can proceed as we did before.
+
+1. Calculate factor weights through time
+2. Calculate portfolio return through time
+3. Calculate alpha through time
+4. Calculate the Cariño K scaling factors
+5. Perform the return attribution
+6. Use the factor weights and returns to run the regression to find the risk attribution
+
+If you want to attribute the residual risk and return to the underlying assets, expand out the $\alpha_p$ equation.
+
+$$
+p = \sum_{j}^{m} w_j F_j + \sum_{i}^{n} w_i e_i
+$$
+
+Either way, the math is the same.
+
+## Problem 2
+
+Using the same data as Problem 1, attribute realized risk and return to the Fama French 3 plus Momentum model. Report the residual total as portfolio alpha.
+
+Note: the factor rows below are rounded to 2 decimal places, so they will not add exactly to the portfolio total. The underlying attribution does sum exactly. Check against the code, not the printed table.
+
+(See code)
+
+| | Mkt-RF | SMB | HML | Mom | Alpha | Portfolio |
+|:--|--:|--:|--:|--:|--:|--:|
+| Total Return | -5.8% | -0.11% | 2.03% | 0.82% | 1.78% | -2.51% |
+| Return Attribution | -4.45% | 0 | 0.29% | -0.08% | 1.77% | -2.51% |
+| Vol Attribution | 1.00% | -0.01% | -0.07% | 0.01% | 0.27% | 1.19% |
+
+: Attribution to the Fama French 3 plus Momentum factors {#tbl-p2 tbl-colwidths="[26,13,12,12,12,12,13]"}
+
+Two things in @tbl-p2 are worth calling out. The market factor accounts for nearly the whole loss and nearly the whole risk, which is the usual result for a long only equity portfolio. And SMB and HML carry negative volatility attribution, which is not an error -- a factor whose realized returns ran counter to the portfolio reduces total risk, and the gradient allocates it a negative share.
+
+# Risk Budgeting and Risk Parity {#sec-rb}
+
+Constructing a portfolio based on risk and return as described in last week's notes usually creates a non-optimal portfolio.
+
+Richard Michaud discusses this in his 1989 paper, "The Markowitz Optimization Enigma: Is 'Optimized' Optimal?" Michaud shows that small changes to correlations, volatilities, and expected values can change the portfolio dramatically. This has led to the often stated:
+
+> "Mean Variance Optimization is Error Maximizing."
+
+Or as Yogi Berra said:
+
+> "It's tough to make predictions, especially about the future."
+
+The mechanism behind Michaud's result is in Week 01. The standard error of an estimated mean is $\sigma/\sqrt{n}$, and for returns $\sigma$ dwarfs $\mu$. The optimizer takes those noisy means at face value and loads up on whichever asset happened to look best.
+
+In practice, we make long term portfolio plans using estimated expected returns and covariance. Research has shown that in the long run risk premia are fairly stable.
+
+For shorter term problems we are often less confident about the expected return, because return volatility dwarfs the expected return. However, we are more confident about volatilities and to some extent correlations.
+
+## Risk Budgets
+
+Ex-ante risk contributions, expressed as a percentage of the total portfolio risk, give us an idea of how much risk we are giving to each position.
+
+If we do not have a good view on expected return, we can instead control how much risk each of our positions uses. This is risk budgeting.
+
+The ex-ante risk budget of the mean variance portfolio from Problem 1 (see code):
+
+| AAPL | MSFT | BRK-B | CSCO | JNJ |
+|--:|--:|--:|--:|--:|
+| 11.8% | 29.5% | 39.7% | 9.15% | 9.8% |
+
+: Risk budget implied by the maximum Sharpe Ratio weights {#tbl-mvbudget}
+
+Here, we have AAPL, CSCO, and JNJ with roughly the same risk budget. MSFT has 3x their assigned risk, and BRK-B has 4x.
+
+Compare @tbl-mvbudget to the weights in @tbl-p1weights. BRK-B is 43.8% of the money and 39.7% of the risk, so those two happen to be close. AAPL is 10.1% of the money and 11.8% of the risk. The two views do not have to agree, and when they diverge the risk view is the one that tells you what the portfolio will actually do.
+
+## Solving for Risk Parity
+
+What if we were to set these risk budgets equal? This is called risk parity.
+
+You can solve for risk parity by setting up a least squares problem. Unfortunately, because we are dealing with the inverse of portfolio volatility, which also involves a square root, this has to be solved with a non-linear optimization.
+
+$$
+CSD = w\, \#\, \frac{\Sigma w}{\sqrt{w'\Sigma w}}
+$$
+
+$$
+SSE = \sum_{i}^{n} \left( CSD_i - \overline{CSD} \right)^2
+$$
+
+$$
+\min SSE
+$$
+
+$$
+s.t.\ \sum_{i}^{n} w_i = 1
+$$
+
+For the covariance matrix used in Problem 1, here are the weights under risk parity (see code):
+
+| Stock | Weight | Risk Budget | $\sigma$ |
+|:--|--:|--:|--:|
+| AAPL | 15.4% | 20% | 25.6% |
+| MSFT | 14.3% | 20% | 25.5% |
+| BRK-B | 26.5% | 20% | 15.2% |
+| CSCO | 15.1% | 20% | 23.4% |
+| JNJ | 28.7% | 20% | 14.9% |
+
+: Risk parity weights {#tbl-rpweights tbl-colwidths="[28,24,24,24]"}
+
+@tbl-rpweights shows the result. Lower risk stocks are given larger weights, roughly in proportion to the inverse of their individual risk, $\sigma$. JNJ carries the lowest volatility at 14.9% and takes the largest weight at 28.7%, while AAPL at 25.6% volatility takes about half that.
+
+Note also what is absent from the problem. No expected return appears anywhere in the optimization, so no estimated mean can distort the answer. That is the entire appeal.
+
+## The Inverse Volatility Approximation
+
+We can approximate risk parity by using the normalized inverse volatility. These are good starting values for your optimization if you have trouble with convergence.
+
+$$
+w_i = \frac{1}{\sigma_i} \cdot \frac{1}{\sum_{j}^{n} \frac{1}{\sigma_j}}
+$$
+
+If all the correlations are equal, the risk parity portfolio is the inverse volatility portfolio.
+
+If all correlations are equal and all Sharpe Ratios are equal, then the risk parity portfolio is also the super efficient, maximum Sharpe Ratio portfolio.
+
+If we think that long term Sharpe Ratios between assets are equal, then the inverse volatility portfolio is an approximation of the super efficient portfolio. This is an estimate that does not rely on estimation of means or correlations, removing a source of error.
+
+That chain of conditions is what makes risk parity defensible rather than arbitrary. It is not a claim that equal risk shares are inherently right. It is a claim that under two assumptions we are more willing to make than a forecast of means, equal risk shares land on the same portfolio the Week 07 optimization would have chosen.
+
+# Risk Parity with Unequal Risk Budgets
+
+Often portfolio managers have an opinion on which assets will outperform other assets in their portfolio. One way to express this view is to give high conviction positions a larger risk weight and low conviction positions a smaller risk weight.
+
+We can add this to our optimization by introducing a vector of relative risk budget.
+
+$$
+b = \left[ b_1, b_2,\ \dots,\ b_n \right]
+$$
+
+If asset $i$ should have 2 times the risk budget of all the others, then
+
+$$
+b_2 = 2 b_i \ \ \forall\ i \neq 2
+$$
+
+Calculate the CSD as before:
+
+$$
+CSD = w\, \#\, \frac{\Sigma w}{\sqrt{w'\Sigma w}}
+$$
+
+Modify CSD by element wise division by the risk budget:
+
+$$
+CSD^{*} = \left[ \frac{CSD_1}{b_1}, \frac{CSD_2}{b_2},\ \dots,\ \frac{CSD_n}{b_n} \right]
+$$
+
+$$
+SSE = \sum_{i}^{n} \left( CSD_i^{*} - \overline{CSD^{*}} \right)^2
+$$
+
+$$
+\min SSE
+$$
+
+$$
+s.t.\ \sum_{i}^{n} w_i = 1
+$$
+
+This is a strictly more general problem. Set every $b_i$ equal and the division changes nothing, so plain risk parity is the special case where the manager has no view.
+
+Example, using the data from before. Assume we have high conviction in MSFT and very little confidence in JNJ. We want MSFT to have 2 risk shares and we want JNJ to only have 50% of a risk share.
+
+| Stock | Weight | Risk Budget | $b$ | RP Weight |
+|:--|--:|--:|--:|--:|
+| AAPL | 13.8% | 18.2% | 1 | 15.4% |
+| MSFT | 23.2% | 36.4% | 2 | 14.3% |
+| BRK-B | 29.1% | 18.2% | 1 | 26.5% |
+| CSCO | 14.7% | 18.2% | 1 | 15.1% |
+| JNJ | 19.3% | 9.1% | 0.5 | 28.7% |
+
+: Unequal risk budgets, against the equal budget weights {#tbl-unequal tbl-colwidths="[22,20,20,14,24]"}
+
+The $b$ column of @tbl-unequal sums to 5.5, so a single share is $1/5.5 = 18.2\%$ of the risk, two shares are $36.4\%$, and half a share is $9.1\%$.
+
+Note that this is not purely a rescaling of the prior risk parity weights. You can see that even though the BRK-B risk budget went down, 18.2% against 20% under equal budgets, the portfolio weight increased.
+
+Correlations matter.
+
+| | AAPL | MSFT | BRK-B | CSCO | JNJ |
+|:--|--:|--:|--:|--:|--:|
+| **AAPL**  | 1.00 | 0.61 | 0.00 | 0.20 | (0.08) |
+| **MSFT**  | 0.61 | 1.00 | (0.04) | 0.38 | (0.04) |
+| **BRK-B** | 0.00 | (0.04) | 1.00 | 0.22 | 0.40 |
+| **CSCO**  | 0.20 | 0.38 | 0.22 | 1.00 | 0.17 |
+| **JNJ**   | (0.08) | (0.04) | 0.40 | 0.17 | 1.00 |
+
+: Correlation matrix used in the risk parity examples {#tbl-rpcorr}
+
+BRK-B and JNJ were offsetting risk from MSFT. Lowering the JNJ weight caused the weight of BRK-B to increase to offset the risk from the additional MSFT weight.
+
+Trace it through @tbl-rpcorr. MSFT and AAPL are correlated at 0.61 and MSFT and CSCO at 0.38, so raising MSFT raises the risk of two other positions along with its own. BRK-B is the only asset with essentially no correlation to MSFT, at $-0.04$, so it is the only place to put money without adding to the concentration that was just created.
+
+# Non-Normal Risk Parity
+
+We have spent a lot of time discussing how returns are not normally distributed. The above risk parity portfolios all assumed multivariate normality and used the volatility as the risk measure.
+
+In the non-normal case, we need a more robust risk measure. We have used VaR and ES in this class. VaR is not a coherent risk measure. One of the implications of this is that the VaR surface is non-convex, so optimizations using VaR may not easily converge and can converge to local optima that are not the global optimum.
+
+Luckily ES is a coherent risk measure and convex.
+
+## Component Expected Shortfall
+
+We will use the same logic as before:
+
+$$
+ES(w) = \sum_{i}^{n} w_i \frac{\partial ES}{\partial w_i}
+$$
+
+That is Euler's theorem again. ES is positively homogeneous, which was property 3 of coherence in Week 05, so the decomposition is exact for the same reason it was exact for volatility.
+
+However, ES does not have a closed form solution if the distribution of the assets is unknown. We can, however, estimate this using finite differences and our simulated returns, $R$.
+
+$$
+\frac{\partial ES}{\partial w_i} \approx \frac{ES\left( \left[ w_1, w_2,\ \dots,\ w_i + e,\ \dots,\ w_n \right]\ |\ R \right) - ES(w\ |\ R)}{e}
+$$
+
+That is the forward difference from Week 07, applied to a function we can only evaluate by simulation. Hold the simulated return matrix $R$ fixed across both evaluations. Redrawing it between them adds simulation noise to the numerator, and since the numerator is a difference of two nearly equal numbers, that noise will dominate the derivative.
+
+From here, the optimization problem is the same. Only the calculation of the component risk changes.
+
+$$
+CES = w\, \#\, \frac{\partial ES}{\partial w}
+$$
+
+$$
+SSE = \sum_{i}^{n} \left( CES_i - \overline{CES} \right)^2
+$$
+
+$$
+\min SSE
+$$
+
+$$
+s.t.\ \sum_{i}^{n} w_i = 1
+$$
+
+You can update the above with the risk budget as before.
+
+$$
+CES^{*} = \left[ \frac{CES_1}{b_1}, \frac{CES_2}{b_2},\ \dots,\ \frac{CES_n}{b_n} \right]
+$$
+
+$$
+SSE = \sum_{i}^{n} \left( CES_i^{*} - \overline{CES^{*}} \right)^2
+$$
+
+## Problem 3
+
+Using the same data as Problem 1 and assuming a 0 mean return, fit a $t$ distribution to each stock return series. Simulate the system using a Gaussian copula. Find the risk parity portfolio using ES as the risk measure.
+
+(See code)
+
+| Stock | ES RP Portfolio | Vol RP Portfolio | Fitted DF |
+|:--|--:|--:|--:|
+| AAPL | 14.9% | 15.4% | 60,120 |
+| MSFT | 13.5% | 14.3% | 4.6 |
+| BRK-B | 26.4% | 26.5% | 21.7 |
+| CSCO | 14.2% | 15.1% | 4.5 |
+| JNJ | 31.0% | 28.7% | 9.4 |
+
+: Risk parity under ES against risk parity under volatility {#tbl-esrp tbl-colwidths="[22,26,26,26]"}
+
+AAPL returns, with a large fitted degrees of freedom, are effectively normally distributed in this simulation. The same is true of BRK-B. The 2 stocks with the lowest fitted degrees of freedom are both reduced in weight, as their fat tails contribute more to tail risk.
+
+The differences in @tbl-esrp are small, and that is the honest headline. Switching from volatility to ES moved the largest weight by 2.3 percentage points. The tail matters, but on this data it matters less than the choice of risk measure suggests it might, and a portfolio manager deciding whether the extra machinery is worth it should see the size of the effect before committing to it.

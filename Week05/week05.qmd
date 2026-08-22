@@ -1,0 +1,371 @@
+---
+title: "Week 05 — Expected Shortfall and Copulas"
+subtitle: "FinTech 545 --- Quantitative Risk Management"
+author: "Dominic Pazzula"
+format:
+  pdf:
+    output-file: "Week 05 - Expected Shortfall and Copulas.pdf"
+    documentclass: scrartcl
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fig-pos: 'H'
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{etoolbox}
+        % Tables here are all short. Without this, longtable can place its
+        % header at the bottom of a page, break, and repeat the header on the
+        % next page with no rows under it. Require room for a few lines first.
+        \AtBeginEnvironment{longtable}{\Needspace*{8\baselineskip}}
+    number-sections: true
+    toc: true
+    toc-depth: 2
+  html:
+    output-file: "Week 05 - Expected Shortfall and Copulas.html"
+    toc: true
+    html-math-method: katex
+---
+
+# Expected Shortfall
+
+Week 04 ended on a measure that is not coherent. VaR reads a single point on the loss distribution, so it is blind to everything past that point, and diversification can move a bad outcome across the threshold and make the reported risk jump. This week fixes both problems, and then fixes the distributional assumption underneath them.
+
+Expected shortfall is the expected value of profit and loss given the loss is beyond VaR.
+
+$$
+ES(X) = E\left( X\ |\ x \leq -VaR(X) \right)
+$$
+
+Expected shortfall is the average of the left tail of the distribution, where the tail is defined as values whose CDF is less than or equal to $\alpha$.
+
+A note on signs, because the two conventions get mixed constantly. The conditional expectation above is a point on the P&L distribution, so it is negative for a loss. The formula that follows carries a leading minus sign, which reports ES as a positive loss number -- the same convention we used for VaR. Both appear in practice. Pick one, state it, and stay with it.
+
+Expected shortfall is sometimes called:
+
+1. Conditional VaR, or CVaR
+2. Average VaR, or AVaR
+3. Expected Tail Loss, or ETL
+
+CVaR is the most widely used alternative, but can sometimes mean different things to different people. It is always good to ask for a definition when someone uses it.
+
+Formally, we can construct this from the PDF and VaR:
+
+$$
+ES(X) = -\frac{1}{\alpha} \int_{-\infty}^{-VaR(X)} x\, f(x)\, dx
+$$
+
+Numerically, given a sample of observations this is just the mean of all values less than or equal to VaR. Two lines of code, and no more difficult than VaR was.
+
+## The Normal Case
+
+ES has closed form solutions for many distributions. Because most of what we do is simulation based, we will calculate ES numerically. In the case of the Delta Normal VaR, it is useful to have the equation for the normal.
+
+$$
+ES_{\alpha}(X) = -\mu + \sigma \frac{f\left( \Phi^{-1}(\alpha) \right)}{\alpha}
+$$
+
+Where $f(x)$ is the standard normal PDF, and $\Phi^{-1}(\alpha)$ is the standard normal quantile function.
+
+Recognize that the expected shortfall for the normal is a linear function of the standard deviation. Just like VaR.
+
+At $\alpha = 0.05$ the multiplier is $f(-1.645)/0.05 = 2.063$, against $1.645$ for VaR. Under normality the two measures are the same number scaled by 1.25, and any statement about one is a statement about the other.
+
+![VaR and ES on a standard normal, and how the gap between them widens as the tail gets heavier](figures/es-vs-var.png){#fig-esvar width=100%}
+
+The left panel of @fig-esvar is the definition. VaR is where the shading starts. ES is the average of what is inside it.
+
+The right panel is why we bother. That fixed 1.25 ratio holds only for the normal. For a $t$ distribution scaled to the same variance the ratio rises as the tail gets heavier -- 1.33 at $\nu = 10$, 1.43 at $\nu = 5$, 1.65 at $\nu = 3$. VaR barely moves across that range because the 5% quantile of a unit-variance $t$ is close to the normal's. ES moves, because it is averaging over the part of the distribution that actually changed.
+
+## Coherence and Convexity
+
+This does not hold for other distributions, but expected shortfall has nice properties.
+
+1. It is a coherent risk measure. That means ES is subadditive, like standard deviation, but unlike VaR.
+2. Expected shortfall forms a convex surface when VaR does not. This means that optimizing based on ES is easier.
+
+Coherence is a defined term. Artzner, Delbaen, Eber, and Heath (1999) set out four properties a risk measure $q$ should have, writing losses as positive:
+
+1. Monotonicity. If portfolio $X$ loses at least as much as $Y$ in every state, then $q(X) \geq q(Y)$.
+2. Subadditivity. $q(X + Y) \leq q(X) + q(Y)$. Combining positions cannot create risk.
+3. Positive homogeneity. $q(\lambda X) = \lambda\, q(X)$ for $\lambda \geq 0$. Doubling the position doubles the risk.
+4. Translation invariance. $q(X + c) = q(X) - c$. Adding cash reduces the risk by the amount of cash.
+
+| Property | VaR | ES |
+|:--|:-:|:-:|
+| Monotonicity | yes | yes |
+| Subadditivity | no | yes |
+| Positive homogeneity | yes | yes |
+| Translation invariance | yes | yes |
+
+: The four coherence properties {#tbl-coherent}
+
+@tbl-coherent is a one row difference, and it is the row from Week 04. The bond example there gave $q(P_1) + q(P_2) = -20$ against $q(P_1 + P_2) = 80$. Run the same example through ES and the inequality holds, because averaging over the tail sees the 0.16% state where both bonds default. VaR never looks past the 5% point.
+
+Property 2 is also what makes property "convex surface" true. A subadditive and positively homogeneous measure is convex in the portfolio weights, so minimizing ES subject to linear constraints is a convex program with one optimum. Minimizing VaR is not, and can have many local minima. Week 07 and Week 08 both build optimizations on this.
+
+## What ES Costs
+
+Expected shortfall has gained in popularity. It gives a loss expectation instead of a minimum like VaR. It is more sensitive to the tails of the distribution than VaR. Fatter tails, meaning more kurtosis, generally mean larger ES, when this is not always the case for VaR.
+
+The Basel framework moved market risk capital from 99% VaR to 97.5% ES for exactly that reason. The two are close under normality -- 97.5% ES is $2.34\sigma$ and 99% VaR is $2.33\sigma$ -- and they separate when the tail is heavy, which is when the number matters.
+
+There is a real cost, and it is worth knowing before recommending ES to anyone.
+
+ES is harder to validate against realized outcomes. VaR has a clean test: count the days the loss exceeded it and compare the count to $\alpha n$. ES has no equivalent, because ES is not elicitable. Gneiting (2011) showed there is no scoring function whose expected value is minimized by the true ES, which is the property a direct backtest needs. Fissler and Ziegel (2016) showed that VaR and ES are jointly elicitable, so ES can be backtested alongside VaR but not on its own.
+
+My opinion: use ES for optimization and for reporting the size of a tail loss, and keep VaR in the report as the thing you can actually backtest. The two cost the same to compute once the distribution is simulated.
+
+# Model Based Simulation {#sec-mbs}
+
+Often we want to simulate from fitted models instead of just a distribution.
+
+$$
+y = f(X, \epsilon)
+$$
+
+To do this, we have to make distributional assumptions on $X$ and $\epsilon$. The easiest assumption is multivariate normal:
+
+$$
+[X\ \epsilon] \sim N(\mu, \Sigma)
+$$
+
+## The OLS Case
+
+If $f(X,\epsilon)$ is OLS, then $X$ and $\epsilon$ are independent and $E(\epsilon) = 0$.
+
+$$
+y = X\beta + \epsilon
+$$
+
+$$
+X \sim N\left( \mu_X, \Sigma_X \right), \quad \epsilon \sim N\left( 0, \sigma^2 \right)
+$$
+
+$$
+[X\ \epsilon] \sim N(\mu, \Sigma), \quad
+\mu = \begin{bmatrix} \mu_X \\ 0 \end{bmatrix}, \quad
+\Sigma = \begin{bmatrix} \Sigma_X & 0 \\ 0 & \sigma^2 \end{bmatrix}
+$$
+
+Read the zeros. $\Sigma_X$ is the $m \times m$ covariance of the regressors, $\sigma^2$ is the scalar residual variance, and the off diagonal blocks are 0 because assumption 3 of OLS says the regressors are uncorrelated with the error. For two regressors the whole matrix is:
+
+$$
+\Sigma = \begin{bmatrix}
+\sigma_{x_1}^2 & \sigma_{x_1 x_2} & 0 \\
+\sigma_{x_1 x_2} & \sigma_{x_2}^2 & 0 \\
+0 & 0 & \sigma^2
+\end{bmatrix}
+$$
+
+We can simulate $[X, \epsilon]$, applying what we have learned previously. This is the Week 03 multivariate draw algorithm with the error term appended to the vector of variables.
+
+In the case of OLS, this model fitting is not needed.
+
+- OLS is a linear function of random normals
+- A linear function of random normals is also a random normal
+- OLS is the same thing as just using a joint, multivariate distribution on $Y$ and $X$
+
+The conditional distributions section of Week 02 is where that last point comes from. Given a joint normal on $[Y\ X]$, the distribution of $Y$ given $X = a$ is normal with
+
+$$
+\bar{\mu} = \mu_Y + \Sigma_{YX}\Sigma_{XX}^{-1}\left( a - \mu_X \right), \qquad
+\bar{\Sigma} = \Sigma_{YY} - \Sigma_{YX}\Sigma_{XX}^{-1}\Sigma_{XY}
+$$
+
+$\Sigma_{YX}\Sigma_{XX}^{-1}$ is $\hat{\beta}$ and $\bar{\Sigma}$ is the residual variance. The regression was already inside the joint normal.
+
+That equivalence is a check on the machinery rather than a result to use. Fit the regression, simulate the pieces, and you get back the joint normal you could have written down at the start. It stops being true the moment any piece is not normal, which is the whole point of the copula in @sec-copula.
+
+## Several Dependent Variables
+
+What if we have $n$ independent variables?
+
+$$
+y_i = f(X, \epsilon_i)\ \ \forall\ i \in [1,n]
+$$
+
+Let $\mathcal{E}$ be the matrix collection of $\epsilon_i$ vectors:
+
+$$
+\mathcal{E} = \left[ \epsilon_1,\ \epsilon_2,\ \dots,\ \epsilon_n \right]
+$$
+
+Then $\mathcal{E}$ is
+
+$$
+\mathcal{E} \sim N\left( 0, \Sigma_{\epsilon} \right)
+$$
+
+If all $X$ variables are used in each model then:
+
+$$
+[X\ \mathcal{E}] \sim N(\mu, \Sigma), \quad
+\mu = \begin{bmatrix} \mu_X \\ 0 \end{bmatrix}, \quad
+\Sigma = \begin{bmatrix} \Sigma_X & 0 \\ 0 & \Sigma_{\epsilon} \end{bmatrix}
+$$
+
+The scalar $\sigma^2$ has become the $n \times n$ matrix $\Sigma_{\epsilon}$. The corner blocks are still 0.
+
+If not all $X$ variables are used in each model, then you have to calculate the full covariance matrix:
+
+$$
+[X\ \mathcal{E}] \sim N(\mu, \Sigma), \quad
+\mu = \begin{bmatrix} \mu_X \\ 0 \end{bmatrix}, \quad
+\Sigma = \operatorname{cov}\left( [X\ \mathcal{E}] \right) =
+\begin{bmatrix} \Sigma_X & \Sigma_{X\epsilon} \\ \Sigma_{X\epsilon}' & \Sigma_{\epsilon} \end{bmatrix}
+$$
+
+The diagonal elements will be the same, however the off diagonal elements will not necessarily be 0. In practice, it is often easier to just calculate the covariance than to construct the block diagonal matrix.
+
+$\Sigma_{\epsilon}$ is the part that is easy to forget. Each model was fit separately and each residual series is uncorrelated with its own regressors by construction, but the residuals of two different models are not uncorrelated with each other. Two stocks that share an industry exposure the market factor did not capture will have residuals that move together, and setting $\Sigma_{\epsilon}$ diagonal throws that away. Week 09 returns to this as the load bearing assumption of a factor model.
+
+The fact that everything is still normal holds even if there are multiple dependent variables ($Y$) and multiple independent variables ($X$).
+
+## A Distribution Is a Model
+
+Recognize that a distributional assumption about a variable is a model.
+
+For example, assuming $y \sim N\left( \mu, \sigma_{\epsilon}^2 \right)$:
+
+$$
+y = f(X, \epsilon) = \mu + \sigma_{\epsilon} z
+$$
+
+$$
+z \sim N(0,1)
+$$
+
+There is no $X$ in that model, which is the point. A variable we simply assume a distribution for and a variable we regress on three factors both end up as a function of an iid error, and the simulation machinery does not distinguish them. That is what lets the next section mix them freely.
+
+# Copulas {#sec-copula}
+
+Often in finance, not all of the data are normally distributed. Some might be close enough, but others are not. There are very few multivariate distributions with well defined properties. We need a way to combine disparate distributions into a single, coherent simulation.
+
+The problem is specific. Fitting a $t$ to one stock and a normal to another is easy. Fitting a joint distribution whose first margin is $t$ and whose second is normal is not, because no standard multivariate family has margins from different families. Everything in Weeks 02 and 03 assumed one $\Sigma$ over one multivariate normal.
+
+Copulas are multivariate cumulative distribution functions whose marginal probability distribution functions are uniform on $[0,1]$. They can be used to combine variables with different assumed distributions.
+
+The mechanism is the inverse CDF method from Week 03, run in both directions. The CDF maps any distribution onto $[0,1]$. The quantile function maps $[0,1]$ back onto any other. Between those two steps the marginal distribution has been stripped out, and what remains is the dependence structure alone.
+
+## Sklar's Theorem
+
+Sklar's theorem forms the basis of copulas.
+
+It states that every multivariate cumulative distribution function of random vector $X$
+
+$$
+H\left( x_1, x_2,\ \dots,\ x_n \right) = P\left( X_1 \leq x_1, X_2 \leq x_2,\ \dots,\ X_n \leq x_n \right)
+$$
+
+can be expressed in terms of its marginal distributions
+
+$$
+F_i\left( x_i \right) = P\left( X_i \leq x_i \right)
+$$
+
+and some copula $C$:
+
+$$
+H\left( x_1, x_2,\ \dots,\ x_n \right) = C\left( F_1\left( x_1 \right), F_2\left( x_2 \right),\ \dots,\ F_n\left( x_n \right) \right)
+$$
+
+Recognize that a CDF $F_i\left( x_i \right) \in [0,1]$.
+
+A copula describes a joint distribution of variables $X$ whose individual distributions are assumed. $F_i()$ does not have to be the same distribution as $F_j()$.
+
+We use the CDF to transform the variables into the range $[0,1]$ and fit the copula.
+
+Sklar's theorem says something stronger than it first appears. Any joint distribution can be split into margins and a copula, and for continuous margins the split is unique. So the choice of copula and the choice of margins are two independent modeling decisions, and getting one right does nothing to protect you from getting the other wrong.
+
+# The Gaussian Copula {#sec-gauss}
+
+There are a number of different copulas. The most common is the Gaussian copula. If you start to work with simulating financial data, looking into other copulas will be beneficial.
+
+Given a correlation matrix $R$, the Gaussian copula is
+
+$$
+C_R(X) = \Phi_R\left( \Phi^{-1}\left( F_1\left( x_1 \right) \right), \Phi^{-1}\left( F_2\left( x_2 \right) \right),\ \dots,\ \Phi^{-1}\left( F_n\left( x_n \right) \right) \right)
+$$
+
+$\Phi^{-1}(x)$ is the standard normal quantile function.
+
+$\Phi_R(X)$ is the multivariate normal CDF given the correlation $R$.
+
+These are all functions we have worked with, and it makes it very simple to fit $R$.
+
+Note what the Gaussian copula does and does not assume. The dependence structure is the one a multivariate normal would have. The marginal distributions are whatever we fit, and they are not normal.
+
+## Fitting the Copula
+
+1. For each variable $i \in 1 \dots n$:
+    a. Transform the observation vector $X_i$ into a uniform vector $U_i$ with $u_i \in [0,1]$ using the CDF for $x_i$, $F_i\left( x_i \right)$.
+    b. Transform the uniform vector $U_i$ into a standard normal vector $Z_i$ using the normal quantile function.
+2. Calculate the correlation matrix of $Z$.
+
+When calculating $Z$, it is generally better to use Spearman correlations. We are often dealing with distributions with large outliers, and Spearman is a more robust correlation measure with outliers.
+
+Spearman correlation for reference:
+
+$$
+r_s = \rho_{R(x),R(y)} = \frac{\operatorname{cov}(R(x),R(y))}{\sigma_{R(x)} \sigma_{R(y)}} = \frac{\sum_{i=1}^{n}\left( R\left( x_i \right) - \overline{R(x)} \right)\left( R\left( y_i \right) - \overline{R(y)} \right)}{\sqrt{\sum_{i=1}^{n}\left( R\left( x_i \right) - \overline{R(x)} \right)^2} \sqrt{\sum_{i=1}^{n}\left( R\left( y_i \right) - \overline{R(y)} \right)^2}}
+$$
+
+Where:
+
+- $\rho_{x,y}$ is the Pearson coefficient of $x$ and $y$
+- $R(x)$ is the rank function
+- $\overline{R(x)}$ is the average of the rank function
+
+Because Spearman uses rank correlations and the quantile function is monotonic, we can skip step 1.b, calculating the $Z$ values, and calculate Spearman correlations from the $U$ matrix.
+
+That shortcut works because ranks survive any monotone transform. $F_i$ is monotone and $\Phi^{-1}$ is monotone, so the ranks of $X$, of $U$, and of $Z$ are identical, and a statistic computed from ranks cannot tell them apart. Week 02 made the same point with $y = x^3$.
+
+$R$ must be PSD before it can be used to simulate. On complete data it will be. Spearman is Pearson computed on rank vectors, and a Pearson matrix built from complete data is PSD by the same argument as any covariance matrix. Missing data is where that breaks, for Spearman exactly as it did for Pearson in Week 03, and the repairs there apply here unchanged.
+
+## Simulating from the Copula
+
+Once the copula is fit, we use the multivariate normal simulation techniques we learned previously. This generates correlated standard normals. We go backwards through the transform in the previous section to arrive at the simulated values of $X$.
+
+1. Simulate $NSim$ draws from the multivariate normal.
+2. For each variable $Z_i \in 1 \dots n$:
+    a. Transform $Z_i$ into a uniform variable using the standard normal CDF, $\Phi\left( z_i \right) = U_i$.
+    b. Transform $U_i$ into the fitted distribution using the quantile of the fitted distribution, $F_i^{-1}\left( U_i \right) = X_i$.
+
+Step 2.b is where the fitted marginals come back. The correlated normals produced in step 1 are a scaffold, and nothing about the final simulated values is normal unless $F_i$ was normal to begin with.
+
+## Tail Dependence
+
+The Gaussian copula has one failure mode worth naming, because it is not obvious and it is not small.
+
+Tail dependence is the probability that one variable is extreme given that another is:
+
+$$
+\lambda_L = \lim_{u \to 0^+} P\left( U_1 \leq u\ |\ U_2 \leq u \right)
+$$
+
+For the Gaussian copula, $\lambda_L = 0$ for every $\rho < 1$. Far enough into the tail, the variables become independent. Fit $\rho = 0.9$ and the model still says that a sufficiently extreme loss in one asset tells you nothing about the other.
+
+![The conditional probability under a Gaussian copula, on its way to zero](figures/joint-exceedance.png){#fig-jointex width=95%}
+
+@fig-jointex is that limit in progress. At $\rho = 0.7$, a 5% day in one asset means a 39% chance of a 5% day in the other, which sounds reasonable. Go to a 0.1% day and it is 16%. Go to a 0.001% day and it is 6%, still falling, on its way to 0.
+
+Whether that matters depends entirely on what the simulation is for. It does not change a portfolio's variance and it barely moves a 5% VaR. It changes the probability that many positions lose together on the same day, which is the event a risk manager is paid to worry about.
+
+The Gaussian copula took a great deal of blame after 2008, mostly through Li (2000), which used it to price correlated defaults in CDO tranches. My opinion: the criticism is fair as far as the tail dependence goes and unfair as an explanation of the crisis. A model that assumes defaults become independent in the extreme is the wrong model for a senior tranche, and that is a real defect. It is not the reason anyone bought the tranche.
+
+Other copula families do not have this property. The $t$ copula is the same construction with a $t$ CDF in place of $\Phi$, and it has positive tail dependence controlled by its degrees of freedom. Archimedean copulas, including Clayton, Gumbel, and Frank, are built from a generator function rather than from a multivariate distribution, and can be asymmetric between the upper and lower tails. Vine copulas build a high dimensional dependence structure out of a tree of bivariate ones.
+
+We are not covering any of them. The $t$ copula alone would require the multivariate $t$, which Week 02 did not cover. Investigate them on your own if you are going to simulate financial data seriously, and start with the $t$ copula, since fitting it is the smallest step from what we have already done.
+
+# Putting It Together
+
+Example problem.
+
+- Calculate VaR on a portfolio holding 1 share of each stock in `DailyPrices.csv`.
+- Model prices as a linear function of SPY with $t$ distributed errors.
+- Model SPY as normally distributed.
+- Assume all stocks and SPY have 0 expected return.
+- Calculate VaR for each stock as well as the total portfolio.
+
+Every piece of that is in this week. The regressions and their residual covariance are @sec-mbs. The mixed distributional assumptions, normal for SPY and $t$ for the errors, are what forces a copula in @sec-gauss. Simulating the copula and repricing the portfolio is Week 04's Monte Carlo VaR with a non-normal draw. Report ES alongside VaR from the same simulated vector, since it costs one more line.

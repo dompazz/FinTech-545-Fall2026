@@ -1,0 +1,600 @@
+---
+title: "Week 06 — Options"
+subtitle: "FinTech 545 --- Quantitative Risk Management"
+author: "Dominic Pazzula"
+format:
+  pdf:
+    output-file: "Week 06 - Options.pdf"
+    documentclass: scrartcl
+    pdf-engine: lualatex
+    geometry: margin=1in
+    fig-pos: 'H'
+    include-in-header:
+      text: |
+        \usepackage{float}
+        \usepackage{needspace}
+        \usepackage{etoolbox}
+        % Tables here are all short. Without this, longtable can place its
+        % header at the bottom of a page, break, and repeat the header on the
+        % next page with no rows under it. Require room for a few lines first.
+        \AtBeginEnvironment{longtable}{\Needspace*{8\baselineskip}}
+    number-sections: true
+    toc: true
+    toc-depth: 2
+  html:
+    output-file: "Week 06 - Options.html"
+    toc: true
+    html-math-method: katex
+---
+
+# Time Value of Money
+
+Modern finance is predicated on the concept of "Time Value of Money" (TVM). TVM is simply the fact that \$1 today is worth more than a guaranteed \$1 at a future time.
+
+Would you loan someone \$100 with a promise to pay \$100 back in 1 year?
+
+At a minimum, there is an economic opportunity cost to forgoing money until a later date. In the presence of inflation, where purchasing power drops over time, there is a real economic cost as well.
+
+Everything in this week is a discounting problem wearing different clothes. An option is a payoff that arrives later and whose size is not known yet, so the apparatus that follows exists to answer two questions at once -- what the payoff will be on average, and what that average is worth today.
+
+## The Risk Free Rate
+
+If money is worth more now than later, then we need a concept of a discount factor, or rate, that equates money now with money later.
+
+The rate at which money can be borrowed or lent, without risk, is called the risk free rate:
+
+$$
+P_{t+1} = P_t(1 + r_{rf})
+$$
+
+Generally when discussing the risk free rate, this is the rate that the government or banks can borrow or lend short term, overnight. It represents the 1 day risk free rate. This is generally quoted as an annual rate. Compounding rules differ by market.
+
+## Arbitrage
+
+We use interest rates as a discounting mechanism. If you know, without a doubt, that you will receive $\$X$ at some future time $t$, what is that worth now?
+
+To understand what that value is, we need to understand arbitrage. Arbitrage is the ability to make a return, in excess of the risk free rate, without taking any risk.
+
+For example, if student A will buy 1 BTC from me for \$50,000 and another student, B, will sell me 1 BTC for \$30,000, I can buy from B and sell immediately to A, making \$20,000.
+
+In this example, I made a 67% return, $\frac{20,000}{30,000}$. I did this instantaneously, so regardless of what the risk free rate was, the rate for zero time is always 0%, and $67\% > 0\%$.
+
+Another example. Student A agrees to buy 1 BTC from me in 1 year for \$50,000. Student B will sell me 1 BTC today for \$30,000. I can buy a 1 year government bond with a rate of 1%. I still make a 67% return, but now the risk free rate is 1%. If there was no chance of Student A failing to do the deal, which is credit risk, then this is arbitrage.
+
+The example above is a forward agreement.
+
+Arbitrage is free money.
+
+When arbitrage exists, market actors are incentivized to take action and pick up the free money. This change in supply and demand causes pricing to shift toward a state where there is no arbitrage.
+
+> "All pricing problems in finance can be described as, 'find the no-arbitrage condition'" -- some old finance professor
+
+## Present and Future Value
+
+Present value is the current value of some asset. We find this by discounting the cash flows from that asset using an interest rate. For risky assets, we take the risk free rate and add a risk premium to it.
+
+$$
+DiscountRate = RiskFreeRate + RiskPremium
+$$
+
+How to come up with the risk premium is the subject of another class. Just understand that it exists. There can be multiple premiums for different risks added.
+
+The question at the top of the section was, if you know without a doubt that you will receive $\$X$ at some future time $t$, what is that worth now?
+
+Here this is a risk free asset. We know with 100% certainty we will receive $\$X$ at time $t$. There is no risk premium, so the discount rate is equal to the risk free rate.
+
+$$
+DiscountRate = RiskFreeRate + 0
+$$
+
+Assume the risk free rate is quoted as a continuously compounded annual return, and $t$ is in years. Present value is the discounted value of the cash flow:
+
+$$
+PV = Xe^{-rt}
+$$
+
+Why? If I invested $PV$ into a government bond now, its future value would be
+
+$$
+FV = PVe^{rt}
+$$
+
+I would receive $FV$ at time $t$. If $FV \neq X$, then there is an arbitrage opportunity.
+
+If our asset was a bond that paid cash flows $X_i$ at times $i \in [1,2,\dots,t]$, then
+
+$$
+PV = \sum_{i=1}^{t} X_i e^{-ri}
+$$
+
+If the discounting rate is instead compounded discretely, on an $N$ times per year basis, then the formula would be
+
+$$
+PV = \sum_{i=1}^{t} \frac{X_i}{\left( 1 + \frac{r}{N} \right)^{N i}}
+$$
+
+Recognize that
+
+$$
+\lim_{N \to \infty} \frac{1}{\left( 1 + \frac{r}{N} \right)^{N}} = e^{-r}
+$$
+
+Continuous compounding is a convenience rather than a description of any market, since nothing actually pays interest an infinite number of times per year. It survives because it makes the algebra close, which is why every option formula in this week is written in terms of $e^{-rT}$ rather than a discrete compounding factor.
+
+# Derivatives and Hedging
+
+Derivatives are financial contracts whose value is derived from an underlying asset or reference. That reference can be a stock, a bond, a commodity, an interest rate, a currency, or an index. Common derivatives include forwards and futures, swaps, and options.
+
+What makes derivatives useful is that they let a participant reshape an exposure without buying or selling the underlying. A producer of jet fuel does not need to stockpile fuel to manage price risk. A portfolio manager can change equity market exposure in one trade using index futures rather than touching every stock in the book.
+
+## Hedging and Speculation
+
+Hedging is reducing risk from an existing exposure. If you are vulnerable to a particular adverse move -- a stock falling, rates rising, a currency weakening -- you take an offsetting position that gains when the original position loses.
+
+The same instruments are used for speculation, which is taking a position to profit from a forecast about direction, volatility, or relative pricing.
+
+Whether a position is a hedge or a speculation depends on what else you hold. A put bought by an investor who owns the shares is a hedge. The same put bought by someone with no position in the stock is a speculation. A company using currency forwards to stabilize future cash flows is hedging. A trader using the same forwards to bet on the exchange rate is speculating. The contract does not know the difference.
+
+That distinction is the economic purpose of derivatives. They transfer risk and put a price on it. Hedgers pay to reduce uncertainty, through the option premium or a less favorable forward price. Speculators accept the risk in exchange for that payment.
+
+## Inherent Leverage
+
+Inherent leverage means you control a large amount of underlying exposure for a small upfront cash outlay, sometimes none at all. Small moves in the underlying become large percentage moves on the derivative position.
+
+Hedgers and speculators therefore do not have to put up much cash to build a position. That is what makes derivatives efficient, and it is the same property that makes them dangerous. Selling options is the case to watch, because the loss is not bounded by what was posted.
+
+# Options
+
+An option is the right, but not the obligation, to exchange at a later date at a determined price. Any time you see a contract where someone has the ability to decide to transact at a later date, that is an option.
+
+> "All options have value." -- another old finance professor
+
+## Where Options Appear
+
+The stock option is the classic example, and it is far from the only one.
+
+1. Stock option. The ability to buy or sell a stock at a given price at some future date.
+2. Loans with no prepayment penalty. US mortgages, auto loans, and similar. A customer can hand the lender the remaining principal of the loan at any time. This has positive value when a borrower can refinance at a lower rate, lowering their payment but keeping the amount owed the same.
+3. Callable bonds. Corporate borrowers sometimes issue callable bonds that allow them to pay the face value plus some premium to retire the debt. This can generally only happen on set dates. When rates fall, corporations call their bonds and issue new bonds at the lower rate. The same as item 2, but for corporations and with set dates.
+4. Puttable bonds. Some corporate bonds are puttable, meaning the lender, who owns the bond, can force the corporation to buy back the bond at face value minus some premium. When rates rise, bond buyers will do this in order to invest their capital at higher rates.
+5. Convertible bonds. Convertible bonds allow the owner of the bond to convert it to common stock at a set price on certain dates.
+6. Auto leases. In the US, you can lease a car for a set period. At the end of that period you can buy the car for a predetermined price or give it back to the dealer.
+
+Items 2 through 6 are not traded as options, and they are frequently not priced as options by the party who wrote them. That gap between what was sold and what was actually given away is where a great deal of money has been made and lost.
+
+## Terms
+
+The security whose price determines the payoff of the option is called the **underlying**. The option's value is derived from the value of the underlying, among other parameters. This is why we call options a derivative.
+
+The price at which the underlying can be bought or sold is called the **strike**. If I buy an Apple option that allows me to buy 1 share of stock at \$100 in 1 year, then the strike is \$100.
+
+The option to purchase something in the future is a **call**. If I buy an Apple option that allows me to buy 1 share of Apple stock in 1 year at a strike of \$100, then I have bought a call.
+
+The option to sell something in the future is a **put**. If I buy an Apple option that allows me to sell 1 share of Apple in 1 year at a strike of \$100, then I have bought a put.
+
+When an option is used, it is called the **exercise**. When you exercise a call option, you buy the contracted amount at the contracted price.
+
+**Maturity or Expiration Date** is the date on which the option contract expires. The option cannot be exercised after this date and the contract is over.
+
+**Time to Maturity** -- the time, usually expressed as a fraction of a year, until the maturity date of the option.
+
+## Exercise Styles
+
+Options that can only be exercised at the maturity date are called **European Options**. In the US, most options on indexes such as the S&P 500 are European options.
+
+Options that can be exercised at any time are called **American Options**. Most options on single name equities are American options.
+
+Options that can be exercised at certain dates between the start and end of the contract are called **Bermuda Options**. Bermuda is an island roughly halfway between the Americas and Europe. That is how these options got their names.
+
+**Asian Options** set either the strike price or the underlying price by some averaging mechanism. This averaging lowers the volatility and the ability to manipulate prices. Energy and some commodity options use this. Asian options tend to be cash settled.
+
+There are many other types of options that vary in how they are exercised.
+
+The style determines how hard the option is to value. European is the only one of the four with a closed form solution, and every case in this course that requires a tree requires it because of the exercise style rather than because of anything about the underlying. Week 07 takes up the American case.
+
+## Settlement
+
+**Physical Settlement** occurs when at option exercise the underlying asset is exchanged. US stock options are physically settled. If you exercise the option, you either are given shares or have to deliver shares.
+
+**Financial (or Cash) Settlement** occurs when the difference between the strike and underlying price is delivered instead of the underlying asset. US index options are usually cash settled.
+
+**Implied Volatility** -- the value of an option depends on the range of possible outcomes at exercise. This implies there is some probability distribution to prices. While we cannot directly observe the market's expectation of the forward price volatility, we can observe option prices. We can back out the market implied volatility from an option pricing function and the option price.
+
+## Payoffs and Moneyness
+
+The **payoff**, or profit, $\pi$, of the option at the time of exercise is the amount of money made when the option is exercised.
+
+The payoff for a call option is
+
+$$
+\pi = \max(0,\ S - X)
+$$
+
+Where $S$ is the underlying price and $X$ is the strike price.
+
+- If the value of the underlying is greater than the strike price, $S > X$, then I can buy the underlying, spending $X$, and sell it for $S$. My profit is $S - X$.
+- If the value of the underlying is less than the strike price, $S < X$, then I do nothing. It does not make sense to buy a stock for $X$ when I could buy it for $S$ where $S < X$.
+
+The payoff of a put option at the time of exercise is
+
+$$
+\pi = \max(0,\ X - S)
+$$
+
+- If the value of the underlying is less than the strike price, $S < X$, then I can buy the underlying for $S$ and sell it back for $X$.
+- If the value of the underlying is greater than the strike price, $S > X$, then I do nothing.
+
+![The payoff of a call and a put at expiry](figures/payoffs.png){#fig-payoffs width=100%}
+
+The kink at the strike in @fig-payoffs is the whole difficulty of this week. It is the point where the payoff function stops being linear, and that non-linearity is why the Delta Normal VaR of Week 04 fails on a book of options, why the second derivative gets a name of its own in Week 07, and why a tree or a simulation is needed wherever a closed form is not available.
+
+If the strike price and underlying price are close together, the option is said to be **At the Money (ATM)**. If the payoff for the option, assuming immediate exercise, is positive, the option is said to be **In the Money**. If the payoff of the option, assuming immediate exercise, is 0, then the option is said to be **Out of the Money**.
+
+The degree to which an option is in or out of the money is called **Moneyness**.
+
+# Option Valuation {#sec-valuation}
+
+So how do we put a value on an option?
+
+In general, we need the present value of the average of the payoff function at exercise.
+
+Assume that $f(S)$ is the PDF of the distribution of the underlying price at the exercise time $t$. Then the value of the option would be
+
+$$
+Value = e^{-rt} \int_{0}^{\infty} \pi\, f(S)\, dS
+$$
+
+Read that as two separate operations. The integral is an expected payoff under an assumed distribution, and the $e^{-rt}$ in front of it discounts that expectation back to today. Everything else in this section is a different way of doing the same integral, and the differences between the methods are entirely about how the distribution of $S$ is obtained.
+
+## A Worked Example
+
+Value a European call option with:
+
+- Underlying price = 100
+- Strike price = 100
+- 125 days until maturity
+- 255 trading days in a year
+- Risk free rate of 5%
+- Implied volatility of 20%
+
+Further assume prices are lognormally distributed.
+
+First, find the volatility to maturity.
+
+$$
+dailyVol = \frac{0.2}{\sqrt{255}} = 1.252\%
+$$
+
+$$
+\sigma = dailyVol \cdot \sqrt{125} = 14\%
+$$
+
+Next find the mean expected price.
+
+$$
+Y \sim LN(\mu,\sigma) \Rightarrow E(Y) = e^{\mu + \frac{\sigma^2}{2}}
+$$
+
+$$
+E\left( P_t \right) = P_0 e^{ttm \cdot r + \frac{\sigma^2}{2}}
+$$
+
+Where $ttm$ is the time to maturity, $\frac{125}{255}$.
+
+$$
+\mu = \ln\left( P_0 \right) + ttm \cdot r
+$$
+
+We grow the asset by the risk free rate. This is part of the no arbitrage condition.
+
+However, we do not want the volatility term to change this. So we set the $\mu$ for the lognormal distribution to remove this.
+
+$$
+\mu = \ln\left( P_0 \right) + ttm \cdot r - \frac{\sigma^2}{2} = \ln(100) + \frac{125}{255}(0.05) - 0.0098 = 4.6199
+$$
+
+That correction is worth pausing on. The mean of a lognormal carries a $\frac{\sigma^2}{2}$ term, so if we left $\mu$ alone then raising the assumed volatility would raise the expected price and manufacture an arbitrage out of nothing. Subtracting the same term inside $\mu$ leaves the expected price at $P_0 e^{rT}$ for any $\sigma$ we choose.
+
+The price of the call option is then
+
+$$
+Value = e^{-\frac{125}{255}(0.05)} \int_{0}^{\infty} \max(0,\ S - 100) \left[ \frac{1}{S\sqrt{2\pi\sigma^2}} e^{-\left( \frac{\left( \ln(S) - \mu \right)^2}{2\sigma^2} \right)} \right] dS
+$$
+
+$$
+Value \approx 6.8089
+$$
+
+This integral has to be solved numerically. In the case of a European option, there is a closed form solution.
+
+## Black Scholes Merton
+
+Fischer Black and Myron Scholes published a paper in 1973 setting up a second order partial differential equation that had to hold for the no arbitrage condition, via a replicating portfolio of continuous delta hedging, consistent with the Capital Asset Pricing Model. Robert Merton published a paper shortly after with the same derivation.
+
+Scholes and Merton were awarded the Nobel Prize in Economics in 1997 for this work. Fischer Black had passed away from cancer in 1995 and the Nobel Prize committee does not care about dead people.
+
+There were a number of papers that take the same equation and modify it for different underlying markets.
+
+1. Black Scholes 1973. Options on non-dividend paying equities. The solution equals the integral in the example above.
+2. Merton 1973. Options on equities paying a continuously compounded dividend. $\mu$ is updated to include the dividend accrual.
+3. Black 1976. Options on futures. Futures prices are quoted in future value, so $\mu$ is updated such that the price does not grow.
+4. Garman and Kohlhagen 1983. Options on FX. Here the risk free rate of the foreign currency needs to be taken into account.
+
+## The Generalized Form
+
+All of these, plus some other cases, can be generalized into a single formula.
+
+- $S$ -- underlying price
+- $X$ -- strike price
+- $T$ -- time to maturity
+- $\sigma$ -- implied volatility
+- $r$ -- risk free rate
+- $b$ -- cost of carry
+- $\Phi()$ -- the normal CDF
+
+$$
+d_1 = \frac{\ln\left( \frac{S}{X} \right) + \left( b + \frac{\sigma^2}{2} \right)T}{\sigma\sqrt{T}}
+$$
+
+$$
+d_2 = d_1 - \sigma\sqrt{T}
+$$
+
+$$
+Call = Se^{(b-r)T}\Phi\left( d_1 \right) - Xe^{-rT}\Phi\left( d_2 \right)
+$$
+
+$$
+Put = Xe^{-rT}\Phi\left( -d_2 \right) - Se^{(b-r)T}\Phi\left( -d_1 \right)
+$$
+
+| Cost of carry | Model | Underlying |
+|:--|:--|:--|
+| $b = r$ | Black Scholes 1973 | Equities with no dividends |
+| $b = r - q$ | Merton 1973 | Equities paying a continuous dividend rate $q$ |
+| $b = 0$ | Black 1976 | Futures |
+| $b = r - r_{ff}$ | Garman and Kohlhagen 1983 | FX, where $r_{ff}$ is the foreign risk free rate |
+
+: One formula, four models, set by the cost of carry {#tbl-carry}
+
+@tbl-carry is why we write the generalized form rather than four separate ones. The four papers differ in what the underlying does to itself while you hold the option, and that is entirely captured by $b$.
+
+This is equivalent to updating the integral's formula for $\mu$ to:
+
+$$
+\mu = \ln\left( P_0 \right) + ttm \cdot b - \frac{\sigma^2}{2}
+$$
+
+The underlying asset grows at rate $b$, the cost of carry.
+
+## Monte Carlo
+
+When the limiting distribution of the final price is unknown, you can always use a Monte Carlo simulation.
+
+1. Simulate prices through time for $N$ iterations.
+2. Evaluate the payoff function at the final time.
+3. Take the average of the payoff function values across the simulations.
+4. Discount that value back to the present value.
+
+Those four steps are the integral at the top of this section, evaluated by sampling instead of by quadrature. Week 03 built the machinery for the draws and Week 05 gave us the tools to draw from something other than a normal, so the only genuinely new part here is step 2, which is the payoff function.
+
+## Value Against Payoff
+
+For a European call on a non-dividend-paying stock, the value of the option is always greater than the payoff function prior to maturity. This premium to the payoff decays with time, called theta decay, until maturity, when the option value equals the payoff function.
+
+$$
+Call\ Value_t > \pi_t \ \ \ \forall\ t > 0
+$$
+
+This does NOT hold for puts. A deep in-the-money European put can be worth less than its payoff function. The holder of a put receives the strike, $X$, but only at maturity, so that strike has to be discounted.
+
+As the underlying goes to 0, the European put converges to $Xe^{-rT} - S$, while the payoff function is $X - S$. The put therefore sits below its payoff by $X\left(1 - e^{-rT}\right)$ -- the interest on the strike.
+
+![Value against payoff for a European call and put](figures/value-vs-payoff.png){#fig-valpay width=100%}
+
+Example. $X=100$, $r=8\%$, $T=1$, $\sigma=30\%$. At $S=50$ the European put is worth $42.46$ against a payoff of $50.00$. At $S=30$ it is worth $62.31$ against a payoff of $70.00$. Both points are marked in the right panel of @fig-valpay, and the shaded region is the gap, which converges to $X(1-e^{-rT}) = 7.69$.
+
+This gap is exactly what makes early exercise of an American put valuable. We will pick that up next week.
+
+# Put Call Parity
+
+First described at the turn of the 20th century by Higgins (1902) and Nelson (1904), put call parity describes a fundamental relationship between the price of a European put and a call on the same underlying, at the same strike price, and with the same maturity.
+
+$$
+C + Xe^{-rT} = P + S
+$$
+
+This holds as a no arbitrage condition, assuming the underlying can be easily shorted, you can lend and borrow at the risk free rate, and there are no transaction costs.
+
+- $C$ -- the price of the call
+- $Xe^{-rT}$ -- the present value of the strike price
+- $P$ -- the price of the put
+- $S$ -- the current price of the underlying
+
+Each term is a transaction we can make, and putting them together gives us replicating portfolios for both a call and a put.
+
+A replicating portfolio is a series of transactions we can do now that mirror the payoff of another portfolio. If the two portfolios have the same payoffs, then their value today should be equal. Otherwise I can buy one and sell the other and lock in an arbitrage profit.
+
+Rearranged, the relationship reads
+
+$$
+C = P + S - Xe^{-rT}
+$$
+
+Show this must hold.
+
+| Transaction | $t=0$ | $t=T$, $S_T > X$ | $t=T$, $S_T \leq X$ |
+|:--|--:|--:|--:|
+| Buy C | $-C$ | $S_T - X$ | $0$ |
+
+: Cash flows from buying the call {#tbl-buycall tbl-colwidths="[31,23,23,23]"}
+
+| Transaction | $t=0$ | $t=T$, $S_T > X$ | $t=T$, $S_T \leq X$ |
+|:--|--:|--:|--:|
+| Buy P | $-P$ | $0$ | $X - S_T$ |
+| Buy stock | $-S_0$ | $S_T$ | $S_T$ |
+| Borrow PV of X | $Xe^{-rT}$ | $-X$ | $-X$ |
+| **Total** | $Xe^{-rT} - P - S_0$ | $S_T - X$ | $0$ |
+
+: Cash flows from the replicating portfolio {#tbl-replicate tbl-colwidths="[31,23,23,23]"}
+
+Compare the Total row of @tbl-replicate to the single row of @tbl-buycall. The two tables use the same columns, so read them straight down. In both future states of the world, buying the call gives the same payoff as buying a put, buying the stock, and taking out a loan. If the two cost different amounts today, the arbitrage is available in whichever direction is cheaper.
+
+Parity is also the cheapest data quality check you have. Take a call and a put on the same underlying, strike, and maturity, compute both sides of the relationship, and if they disagree by more than the bid-ask spread then one of the two prices is stale or one of the contract terms in your database is wrong.
+
+# Binomial Trees
+
+Binomial trees provide a way to value options with path dependencies. They were first published in 1979 by Cox, Ross, and Rubinstein.
+
+A binomial tree is a recombining tree structure that discretely approximates geometric Brownian motion. If taken to its limit with an infinite number of small steps, it converges to Brownian motion.
+
+Recommended reading: Chapter 13 of Hull, *Options, Futures, and Other Derivatives*, 11th edition, starting page 266.
+
+## One Step
+
+You own a European call option with a strike of \$100. The current share price of the stock is \$100. The risk free rate is 5%. The time to maturity is 1 year. Using a 1 step binomial tree, approximate the value of the option.
+
+In this tree we say the binomial states of the world are either the stock gains 10% or loses 10%. The 10% is arbitrarily chosen for now. If this is the case, the value of the call at expiration is either \$10 or \$0.
+
+![One step binomial tree](figures/tree1.svg){#fig-tree1 width=70%}
+
+@fig-tree1 has two terminal nodes and nothing in between, which is as small as a tree gets and still says something.
+
+What is the value of the call today? The intuitive answer is a probability weighted average of the final states discounted to present value.
+
+$$
+C_0 = e^{-0.05}\left( p \cdot 10 + (1-p) \cdot 0 \right)
+$$
+
+## Risk Neutral Probability
+
+Finding the value of $p$ requires us to go back to the risk neutral framework used in the option valuations above. This is the probability, in the risk neutral world and not the real world, of the up move in price.
+
+$$
+u,\ d = \text{price multiplier in the (positive, negative) case}
+$$
+
+$$
+p = \frac{e^{b \Delta t} - d}{u - d}, \qquad (1-p) = \frac{u - e^{b \Delta t}}{u - d}
+$$
+
+The book walks you through the proof.
+
+Here we use the cost of carry, $b$, instead of the risk free rate to be consistent with our generalized Black Scholes model.
+
+What is interesting, and what was proved long ago, is that we do not need real probabilities of the moves. The risk neutral assumption gives the same option value as if we used appropriate probabilities and non-risk-free discount rates.
+
+Back to the example. With one step, $\Delta t = T = 1$:
+
+$$
+p = \frac{e^{0.05} - 0.9}{1.1 - 0.9} = \frac{0.1513}{0.2} = 0.7564
+$$
+
+$$
+C_0 = e^{-0.05}\left( 0.7564 \cdot 10 + 0.2436 \cdot 0 \right) \approx 7.20
+$$
+
+## Adding Volatility
+
+The missing piece is how to incorporate volatility. The $u$ and $d$ values are chosen as
+
+$$
+u = e^{\sigma\sqrt{\Delta t}}, \qquad d = e^{-\sigma\sqrt{\Delta t}}
+$$
+
+Where
+
+$$
+\Delta t = \frac{T}{N}
+$$
+
+$N$ is the number of steps in the tree and $T$ is the time to maturity, expressed in years.
+
+Note that $ud = 1$. That is what makes the tree recombine, since an up move followed by a down move returns to exactly the starting price, and it is the reason an $N$ step tree has $N+1$ terminal nodes rather than the $2^N$ a non-recombining tree would produce. At $N = 50$ that is the difference between 51 nodes and a number with 16 digits in it.
+
+## Two Step Example
+
+$T = 1$, $N = 2$, $S = 100$, $r = b = 0.05$, and $\sigma = 0.1$.
+
+Note that $\sigma$ here is an annual volatility. In the first example we started from a 20% annual volatility and converted it to a 14% volatility to maturity, so the two are not directly comparable.
+
+Then
+
+$$
+u = e^{0.1\sqrt{0.5}} = 1.073271, \qquad d = e^{-0.1\sqrt{0.5}} = 0.931731
+$$
+
+$$
+p = \frac{e^{0.05 \cdot 0.5} - 0.931731}{1.073271 - 0.931731} = 0.6612
+$$
+
+The general form of the recombining 2 step tree is shown in @fig-tree2.
+
+![Two step recombining binomial tree](figures/tree2.svg){#fig-tree2 width=90%}
+
+There are 3 states of the world to consider.
+
+1. The Up/Up case has a final stock value, probability, and call value:
+    a. $S_T = Su^2 = 115.19$
+    b. $p_T = p^2 = 0.4372$
+    c. $C_T = \max(0,\ S-X) = 15.19$
+2. The Up/Down and Down/Up case can be reached through 2 paths:
+    a. $S_T = Sud = 100$
+    b. $p_T = 2p(1-p) = 0.4480$
+    c. $C_T = 0$
+3. The Down/Down case has values:
+    a. $S_T = Sd^2 = 86.81$
+    b. $p_T = (1-p)^2 = 0.1148$
+    c. $C_T = 0$
+
+The approximate value of the call option is then
+
+$$
+C \approx e^{-0.05}\left( 15.19 \cdot 0.4372 + 0 + 0 \right) = 6.32
+$$
+
+Using the BSM model, the exact value of the call option is \$6.80.
+
+The 2 step tree is a coarse approximation. It is off by roughly \$0.49 here. The tree converges to the BSM value as $N$ increases: $N=10$ gives $6.70$, $N=50$ gives $6.78$, $N=200$ gives $6.80$, and $N=1000$ gives $6.8039$, against the closed form $6.8050$. Use enough steps.
+
+## The General N Step Tree
+
+If we generalize the binomial tree out to $N$ steps, then we have $N+1$ terminal nodes.
+
+For each node $i \in 0 \dots N$:
+
+$$
+S_{T,i} = S u^{i} d^{N-i}
+$$
+
+$$
+p_{T,i} = p^{i}(1-p)^{N-i}
+$$
+
+$$
+nPaths = \frac{N!}{i!(N-i)!}
+$$
+
+Where $nPaths$ is the number of pathways that arrive at node $i$.
+
+Therefore the final value of the option is
+
+$$
+Value = e^{-rT}\sum_{i=0}^{N} \left( \frac{N!}{i!(N-i)!} \right) p^{i}(1-p)^{N-i}\, \pi\left( S u^{i} d^{N-i} \right)
+$$
+
+That expression is a binomial distribution over terminal prices, and as $N$ grows the Central Limit Theorem takes it to the lognormal of @sec-valuation. The tree and the closed form are the same model at different resolutions.
+
+Nothing in that formula requires the option to be European. It sums over terminal nodes only, so it prices the European case. Working backwards through the tree node by node instead, and taking the larger of the continuation value and the exercise payoff at each node, prices the American case. That is Week 07.
+
+# Implied Volatility
+
+So far, we have used the implied volatility as an input. However, the market priced volatility is not directly observable. Instead we have to solve for it using our option valuation routine and the observed market price.
+
+The valuation formula is monotone in $\sigma$ -- more volatility is always more option value -- so the inverse exists and is unique. Any root finder will locate it.
+
+Example. The observed option price is \$6. There are 125 days until maturity, 255 days in a year. The risk free rate is 5%. The strike on the option is \$100 and the current stock price is \$100. What is the implied volatility?
+
+Solution: using the root finder in Julia and the generalized Black Scholes Merton formula, we find the volatility implied by the market price is approximately 17%.
+
+Compare that to the worked example in @sec-valuation, where a 20% volatility on the same option gave a value of \$6.81. A difference of \$0.81 in the price moved the implied volatility by 3 percentage points, which means option prices are a sensitive read on the market's volatility expectation and a noisy one on anything else. That sensitivity is the reason traders quote options in volatility terms rather than in dollars.
