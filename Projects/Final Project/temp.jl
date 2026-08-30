@@ -4,7 +4,7 @@ using SpecialFunctions
 using QuadGK
 
 x = copy(toFit[!,"NOW"])
-d = fit_NIG_mm(x).errorModel
+d = fit_NIG_mle(x).errorModel
 
 using Interpolations
 using QuadGK
@@ -189,5 +189,5 @@ quantile2(d,u[1],x->fast_cdf(x)) - quantile(d,u[1])
 
 
 u = rand(100000)
-fm = fit_NIG_mm(toFit[!,"NOW"])
+fm = fit_NIG_mle(toFit[!,"NOW"])
 @time fm.eval.(u)

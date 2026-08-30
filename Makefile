@@ -2,6 +2,7 @@
 #   make          -> all PDFs (named from each .qmd's output-file)
 #   make book     -> the nine weeks assembled into one PDF, in book/
 #   make html     -> HTML versions
+#   make slides   -> the Week 02 reveal.js deck
 #   make figures  -> recompile the TikZ figures to SVG and the data-driven PNGs
 #   make clean    -> remove rendered output
 QMD := $(wildcard Week*/week*.qmd)
@@ -16,6 +17,11 @@ book:
 
 html:
 	for f in $(QMD); do quarto render $$f --to html; done
+
+# Slide decks live one level deeper than the notes so the QMD wildcard above
+# does not pick them up and try to render them as articles.
+slides:
+	quarto render Week02/slides/week02-slides.qmd --to revealjs
 
 figures:
 	cd Week02/figures && python3 make_figures.py
@@ -34,5 +40,6 @@ clean:
 	rm -rf book/*_files
 	rm -f Week*/*.pdf Week*/*.html
 	rm -rf Week*/*_files Week*/figures/*.aux Week*/figures/*.log Week*/figures/*.pdf
+	rm -rf Week*/slides/*.html Week*/slides/*_files
 
-.PHONY: all book html figures clean
+.PHONY: all book html slides figures clean

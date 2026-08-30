@@ -15,6 +15,8 @@ include("../Week04/return_calculate.jl")
 include("fitted_model.jl")
 include("simulate.jl")
 include("RiskStats.jl")
+include("../library/multivariate_t.jl")
+include("../library/copula.jl")
 
 prices = CSV.read("DailyPrices.csv",DataFrame)
 #current Prices
@@ -91,42 +93,21 @@ for i in 1:n
 end
 
 # The tau matrix is PSD on complete data. The entrywise sin() transform is not
-# guaranteed to preserve that, so check and repair. Higham returns a PSD matrix,
-# which can still be singular, so nudge it to positive definite afterwards --
-# the copula densities below need a Cholesky root.
-function fix_correlation(R; tol=1e-8, ridge=1e-8)
-    minEig = minimum(eigvals(R))
-    if minEig < -tol
+# guaranteed to preserve that, so check and repair. fix_correlation does the
+# repair; the eigenvalue is reported here so the reader sees whether it fired.
+# The copula densities below need a Cholesky root, so a merely PSD R is not
+# enough -- it has to come back positive definite.
+function report_psd(R)
+    minEig = min_eigenvalue(R)
+    if minEig < -1e-8
         @printf("R is not PSD (min eigenvalue %.6f). Repairing.\n", minEig)
-        R = higham_nearestPSD(R)
     else
         @printf("R is PSD. Min eigenvalue %.6f\n", minEig)
     end
-    # Higham can return a matrix that is asymmetric in the last bits and only
-    # just PSD. Both break the Cholesky the copula densities need.
-    R = (R + R') ./ 2
-    if minimum(eigvals(R)) < ridge
-        R = (R + ridge * I) ./ (1 + ridge)
-    end
-    return R
 end
 
+report_psd(Rk)
 Rk = fix_correlation(Rk)
-
-# A copula density is the joint density divided by the product of the marginal
-# densities of the transformed variables.
-function gaussian_copula_ll(U,R)
-    Z = quantile.(Normal(),U)
-    mvn = MvNormal(R)
-    return sum(logpdf(mvn,Z[k,:]) for k in 1:size(Z,1)) - sum(logpdf.(Normal(),Z))
-end
-
-function t_copula_ll(U,R,nu)
-    td = TDist(nu)
-    T = quantile.(td,U)
-    mvt = MvTDist(nu,Matrix(R))
-    return sum(logpdf(mvt,T[k,:]) for k in 1:size(T,1)) - sum(logpdf.(td,T))
-end
 
 # Make the choice on a subset of the columns, not on all of them.
 #
@@ -143,6 +124,7 @@ Rsel = sin.(pi .* corkendall(Usel) ./ 2)
 for i in 1:length(sel)
     Rsel[i,i] = 1.0
 end
+report_psd(Rsel)
 Rsel = fix_correlation(Rsel)
 
 # Profile nu on theta = 1/nu so the resolution goes where it matters.
@@ -177,19 +159,8 @@ println("Copula Fitting Took $(time()-st)")
 NSim = 5000
 
 # Gaussian copula: correlated standard normals, then the normal CDF.
-function simulate_gaussian_copula(R,nsim;seed=1234)
-    return cdf(Normal(), simulate_pca(R,nsim;seed=seed))
-end
-
 # t copula: the same correlated normals scaled by one chi-square draw per
-# iteration, then the t CDF with the copula's nu.
-function simulate_t_copula(R,nsim,nu;seed=1234)
-    Z = simulate_pca(R,nsim;seed=seed)
-    Random.seed!(seed+1)
-    w = nu ./ rand(Chisq(nu),nsim)
-    Y = sqrt.(w) .* Z
-    return cdf.(TDist(nu),Y)
-end
+# iteration, then the t CDF with the copula's nu. Both live in library/copula.jl.
 
 # Take the simulated U values back through the fitted models.
 function simulate_returns(simU)
@@ -265,7 +236,7 @@ end
 st = time()
 
 simU_g = DataFrame(simulate_gaussian_copula(R,NSim), nms)
-simU_t = DataFrame(simulate_t_copula(Rk,NSim,nuhat), nms)
+simU_t = DataFrame(simulate_t_copula(Rk,nuhat,NSim), nms)
 
 riskGauss, totalGauss = portfolio_risk(simulate_returns(simU_g))
 riskT, totalT = portfolio_risk(simulate_returns(simU_t))

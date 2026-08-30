@@ -21,6 +21,7 @@ using Printf
 include("../Week04/return_calculate.jl")
 include("fitted_model.jl")
 include("simulate.jl")
+include("../library/multivariate_t.jl")
 
 stocks = ["SPY", "AAPL", "MSFT", "JPM", "XOM"]
 
@@ -54,21 +55,13 @@ for i in 1:n
 end
 
 # The tau matrix is PSD on complete data. The entrywise sin() transform is not
-# guaranteed to preserve that, so check and repair. Higham returns a PSD matrix,
-# which can still be singular, so nudge it to positive definite afterwards.
-function fix_correlation(R; tol=1e-8, ridge=1e-8)
-    minEig = minimum(eigvals(R))
-    if minEig < -tol
-        @printf("R is not PSD (min eigenvalue %.6f). Repairing.\n", minEig)
-        R = higham_nearestPSD(R)
-    else
-        @printf("\nR is PSD. Min eigenvalue %.4f\n", minEig)
-    end
-    R = (R + R') ./ 2
-    if minimum(eigvals(R)) < ridge
-        R = (R + ridge * I) ./ (1 + ridge)
-    end
-    return R
+# guaranteed to preserve that, so check and repair. fix_correlation does the
+# repair; the eigenvalue is reported here so the reader sees whether it fired.
+minEig = min_eigenvalue(R)
+if minEig < -1e-8
+    @printf("R is not PSD (min eigenvalue %.6f). Repairing.\n", minEig)
+else
+    @printf("\nR is PSD. Min eigenvalue %.4f\n", minEig)
 end
 
 R = fix_correlation(R)
@@ -91,27 +84,12 @@ end
 # A multivariate t carries a scale matrix, not a covariance. cov = nu/(nu-2)*S,
 # so at a given nu the scale of variable i has to be sd_i*sqrt((nu-2)/nu), and
 # every parameter of the distribution becomes a function of nu alone.
-function mvt_ll(nu)
-    d = sd .* sqrt((nu - 2) / nu)
-    S = (d * d') .* R
-    dist = MvTDist(nu, mu, Matrix(S))
-    return sum(logpdf(dist, X[k, :]) for k in 1:m)
-end
+mvt_ll(nu) = mvt_loglikelihood(X, mu, sd, R, nu)
 
 # Search on theta = 1/nu so the resolution goes where it matters. The interval
 # stops at 0.49 rather than 0.5 to keep nu off its lower bound, where the scale
 # above collapses to zero and S stops being invertible.
-thetas = range(0.01, 0.49, length=200)
-lls = [mvt_ll(1.0 / th) for th in thetas]
-i = argmax(lls)
-
-lo = thetas[max(i - 1, 1)]
-hi = thetas[min(i + 1, length(thetas))]
-fine = range(lo, hi, length=200)
-fineLls = [mvt_ll(1.0 / th) for th in fine]
-j = argmax(fineLls)
-
-nuhat = 1.0 / fine[j]
+nuhat, _ = profile_nu(mvt_ll)
 
 println("\nThe log likelihood as a function of nu")
 for nu in [4.0, 6.0, nuhat, 10.0, 15.0, 20.0, 40.0]
@@ -123,15 +101,7 @@ end
 # --- Simulating from the fit ---------------------------------------------
 # The mixture representation: one chi-square draw scales the whole normal
 # vector, and that common shock is what puts weight in the joint tail.
-function simulate_mvt(mu, S, nu, nsim; seed=1234)
-    Z = simulate_pca(S, nsim; seed=seed)
-    Random.seed!(seed + 1)
-    w = nu ./ rand(Chisq(nu), nsim)
-    return sqrt.(w) .* Z .+ mu'
-end
-
-d = sd .* sqrt((nuhat - 2) / nuhat)
-S = (d * d') .* R
+S = mvt_scale(sd, R, nuhat)
 sim = simulate_mvt(mu, S, nuhat, 100000)
 
 # Compare against the package's own multivariate t. If these agree, use

@@ -20,6 +20,8 @@ using Printf
 include("../Week04/return_calculate.jl")
 include("fitted_model.jl")
 include("simulate.jl")
+include("../library/multivariate_t.jl")
+include("../library/copula.jl")
 
 stocks = ["SPY", "AAPL", "MSFT", "JPM", "XOM"]
 
@@ -54,71 +56,29 @@ for i in 1:n
 end
 
 # The tau matrix is PSD on complete data. The entrywise sin() transform is not
-# guaranteed to preserve that, so check and repair. Higham returns a PSD matrix,
-# which can still be singular, so nudge it to positive definite afterwards --
-# the copula densities below need a Cholesky root.
-function fix_correlation(R; tol=1e-8, ridge=1e-8)
-    minEig = minimum(eigvals(R))
-    if minEig < -tol
-        @printf("R is not PSD (min eigenvalue %.6f). Repairing.\n", minEig)
-        R = higham_nearestPSD(R)
-    else
-        @printf("R is PSD. Min eigenvalue %.6f\n", minEig)
-    end
-    # Higham can return a matrix that is asymmetric in the last bits and only
-    # just PSD. Both break the Cholesky the copula densities need.
-    R = (R + R') ./ 2
-    if minimum(eigvals(R)) < ridge
-        R = (R + ridge * I) ./ (1 + ridge)
-    end
-    return R
+# guaranteed to preserve that, so check and repair. fix_correlation does the
+# repair; the eigenvalue is reported here so the reader sees whether it fired.
+minEig = min_eigenvalue(R)
+if minEig < -1e-8
+    @printf("R is not PSD (min eigenvalue %.6f). Repairing.\n", minEig)
+else
+    @printf("R is PSD. Min eigenvalue %.6f\n", minEig)
 end
 
 R = fix_correlation(R)
 
-# --- Step 3: copula log likelihoods --------------------------------------
+# --- Steps 3 and 4: the copula log likelihoods, and nu by profile ---------
 # A copula density is the joint density divided by the product of the marginal
-# densities of the transformed variables.
-
-function gaussian_copula_ll(U, R)
-    Z = quantile.(Normal(), U)
-    mvn = MvNormal(R)
-    joint = sum(logpdf(mvn, Z[k, :]) for k in 1:size(Z, 1))
-    margins = sum(logpdf.(Normal(), Z))
-    return joint - margins
-end
-
-function t_copula_ll(U, R, nu)
-    td = TDist(nu)
-    T = quantile.(td, U)
-    mvt = MvTDist(nu, Matrix(R))
-    joint = sum(logpdf(mvt, T[k, :]) for k in 1:size(T, 1))
-    margins = sum(logpdf.(td, T))
-    return joint - margins
-end
-
-# --- Step 4: profile nu ---------------------------------------------------
-# Search on theta = 1/nu so the grid resolution goes where it matters. The
-# bounds put nu in [2, 100]; past 100 the t copula and the Gaussian are
-# indistinguishable at any sample size we will have.
-thetas = range(0.01, 0.49, length=200)
-lls = [t_copula_ll(Umat, R, 1.0 / th) for th in thetas]
-i = argmax(lls)
-
-# refine between the neighbours of the grid maximum
-lo = thetas[max(i - 1, 1)]
-hi = thetas[min(i + 1, length(thetas))]
-fine = range(lo, hi, length=200)
-fineLls = [t_copula_ll(Umat, R, 1.0 / th) for th in fine]
-j = argmax(fineLls)
-
-nuhat = 1.0 / fine[j]
-llT = fineLls[j]
+# densities of the transformed variables. Search nu on theta = 1/nu so the grid
+# resolution goes where it matters. The bounds put nu in [2, 100]; past 100 the
+# t copula and the Gaussian are indistinguishable at any sample size we will
+# have.
+nuhat, llT = profile_nu(nu -> t_copula_ll(Umat, R, nu))
 llG = gaussian_copula_ll(Umat, R)
 
 # --- Step 5: choose -------------------------------------------------------
-aicc(ll, k, m) = -2 * ll + 2 * k + (2 * k^2 + 2 * k) / (m - k - 1)
-bic(ll, k, m) = k * log(m) - 2 * ll
+aicc(ll, k, m) = copula_aicc(ll, k, m)
+bic(ll, k, m) = copula_bic(ll, k, m)
 
 kG, kT = 0, 1
 dBIC = 2 * (llT - llG) - log(m)
@@ -134,7 +94,7 @@ println("\nCopula comparison, m = $m observations, n = $n variables")
         dBIC, dBIC > 0 ? "t" : "Gaussian")
 
 # --- Tail dependence implied by the fit ----------------------------------
-lower_tail_dep(nu, rho) = 2 * cdf(TDist(nu + 1), -sqrt((nu + 1) * (1 - rho) / (1 + rho)))
+lower_tail_dep(nu, rho) = tail_dependence_t(rho, nu)
 
 println("\nImplied lower tail dependence at nu = $(round(nuhat,digits=1))")
 println("  (every one of these is 0 under the Gaussian copula)")

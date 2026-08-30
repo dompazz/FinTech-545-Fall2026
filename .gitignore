@@ -31,3 +31,9 @@ _to_delete/
 
 # Personal style reference, not course material
 writing-style.md
+
+# Claude Code local settings (machine-specific, not shared)
+.claude/settings.local.json
+
+/.quarto/
+**/*.quarto_ipynb

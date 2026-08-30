@@ -24,6 +24,7 @@ From the repository root:
 | `make` | Render every week to PDF. |
 | `make book` | Regenerate `book/book.qmd` from the nine weeks and render it. |
 | `make html` | Render every week to HTML. |
+| `make slides` | Render the Week 02 reveal.js deck to HTML. |
 | `make figures` | Rebuild the matplotlib and TikZ figures. |
 | `make clean` | Remove rendered output. |
 
@@ -35,6 +36,19 @@ cd Week05 && quarto render week05.qmd --to pdf
 
 Each week's YAML names its own output file, so the PDF lands beside the source
 as `Week 05 - Expected Shortfall and Copulas.pdf` rather than `week05.pdf`.
+
+### Slides
+
+Decks live in `Week0N/slides/`, one level below the notes. That keeps them out of
+the `Week*/week*.qmd` wildcard `make` uses, which would otherwise try to render a
+deck as an article PDF, and out of the way of `make clean`. Week 02 is the only
+deck so far:
+
+```
+quarto render Week02/slides/week02-slides.qmd --to revealjs
+```
+
+The deck reads its figures from `../figures/`, so nothing is duplicated.
 
 ## What you need installed
 

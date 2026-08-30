@@ -415,35 +415,161 @@ function fit_general_johnsonsu_mm(x;start_γ=0.0, start_ξ = 0.0, start_δ = 1.0
 end
 
 
-#MM for NormalInverseGaussian MM
-function fit_NIG_mm(x)
+# FastNIGCDF and the two NIG fitters below need Interpolations and QuadGK in
+# scope, and the NIG cdf/quantile methods from skewNormal.jl. Like everything
+# else in this file, the caller supplies them -- include skewNormal.jl first.
+# The interp field is parameterized rather than typed as AbstractInterpolation
+# so that including this file does not itself require Interpolations.
+
+"""
+    FastNIGCDF(d::NormalInverseGaussian; n_points=1000)
+
+Creates a fast interpolation-based CDF evaluator for the NormalInverseGaussian distribution.
+Returns a callable object that evaluates the CDF at any point.
+
+Parameters:
+- d: NormalInverseGaussian distribution
+- n_points: Number of points for interpolation grid
+"""
+struct FastNIGCDF{I}
+    interp::I
+    d::NormalInverseGaussian
+    x_min::Float64
+    x_max::Float64
+
+    function FastNIGCDF(d::NormalInverseGaussian; n_points=1600)
+        # Extract parameters
+        μ = d.μ
+        α = d.α
+        β = d.β
+        δ = d.δ
+        γ = sqrt(α^2 - β^2)
+        
+        # Determine reasonable range for the distribution
+        # Use theoretical properties for tighter bound calculation
+        variance = δ * α^2 / γ^3
+        std_dev = sqrt(variance)
+        
+        # Range covers μ ± 5 standard deviations
+        x_min = μ - 10 * std_dev
+        x_max = μ + 10 * std_dev
+        
+        # Create a non-uniform grid with more points in the center
+        # This gives better accuracy where the density changes rapidly
+        center_points = n_points ÷ 2
+        tail_points = n_points ÷ 4
+        
+        # Create three segments with different point densities
+        left_segment = collect(range(x_min, μ - 0.5 * std_dev, length=tail_points))
+        center_segment = collect(range(μ - 0.5 * std_dev, μ + 0.5 * std_dev, length=center_points))
+        right_segment = collect(range(μ + 0.5 * std_dev, x_max, length=tail_points))
+        
+        # Combine segments
+        x_grid = vcat(left_segment, center_segment[2:end], right_segment[2:end])
+        
+        # Compute CDF values accurately using quadrature only once
+        function accurate_cdf(x)
+            function f(_x)
+                out = pdf(d, _x)
+                isnan(out) ? 0.0 : out
+            end
+            return quadgk(f, x_min - 20*std_dev, x, rtol=1e-6)[1]
+        end
+        
+        # Calculate CDF at grid points
+        cdf_values = map(accurate_cdf, x_grid)
+        
+        # Use linear interpolation which is more robust and still fast
+        interp = LinearInterpolation(x_grid, cdf_values, extrapolation_bc=Line())
+        
+        # Return the FastNIGCDF object
+        new{typeof(interp)}(interp, d, x_min, x_max)
+    end
+end
+
+# Make the FastNIGCDF struct callable
+function (f::FastNIGCDF)(x::Real)
+    d = f.d
+    
+    # Handle values outside the interpolation range
+    if x <= f.x_min
+        return 0.0
+    elseif x >= f.x_max
+        return 1.0
+    else
+        # Use interpolation for values within range
+        return f.interp(x)
+    end
+end
+
+# Method of moments for the NIG, in closed form.
+#
+# The NIG(mu, alpha, beta, delta) moments, with gamma = sqrt(alpha^2 - beta^2):
+#
+#   mean  = mu + delta*beta/gamma
+#   var   = delta*alpha^2/gamma^3
+#   skew  = 3*beta/(alpha*sqrt(delta*gamma))
+#   exkur = 3*(1 + 4*beta^2/alpha^2)/(delta*gamma)
+#
+# Write rho = beta/alpha. Then skew^2/exkur = 3*rho^2/(1 + 4*rho^2), which
+# inverts for rho without touching the other two parameters, and the rest
+# follows one at a time. The NIG can only reach shapes with
+# exkur > (5/3)*skew^2; outside that the sample is telling you to fit
+# something else.
+function fit_nig_moments(x)
+    m = mean(x)
+    v = var(x)
+    s = skewness(x)
+    k = kurtosis(x)   # excess
+
+    k > 0 || error("NIG method of moments needs positive excess kurtosis, got $k")
+    t = s^2 / k
+    t < 3/5 || error("Sample is outside the NIG region: excess kurtosis must exceed (5/3)*skew^2")
+
+    rho2 = t / (3 - 4t)
+    rho = sign(s) * sqrt(rho2)
+
+    D = 3 * (1 + 4 * rho2) / k          # delta*gamma
+    alpha = sqrt(D / (v * (1 - rho2)^2))
+    beta = rho * alpha
+    gamma = alpha * sqrt(1 - rho2)
+    delta = D / gamma
+    mu = m - delta * beta / gamma
+
+    return _nig_fitted_model(NormalInverseGaussian(mu, alpha, beta, delta), x)
+end
+
+#MLE for NormalInverseGaussian, via scipy
+function fit_NIG_mle(x)
     scipy = pyimport("scipy")
 
     fit = scipy.stats.norminvgauss.fit(x)
 
-    mu = fit[3] 
-    delta = fit[4] 
+    mu = fit[3]
+    delta = fit[4]
     alpha = fit[1]/delta
     beta = fit[2]/delta
 
-    #create the error model
-    errorModel = NormalInverseGaussian(mu,alpha,beta,delta)
-    
+    return _nig_fitted_model(NormalInverseGaussian(mu,alpha,beta,delta), x)
+end
+
+# Shared tail of both NIG fits. The direct quantile on a NIG is slow enough that
+# the interpolated CDF is worth building once and closing over.
+function _nig_fitted_model(errorModel::NormalInverseGaussian, x)
     #calculate the errors and U
     errors = x .- mean(errorModel)
 
     u = cdf(errorModel,x)
-    # u = scipy.stats.norminvgauss.cdf(x,fit...)
-    # u = Vector{Float64}()
 
     fast_cdf = FastNIGCDF(errorModel)
+    _cdf(z) = fast_cdf(z)
 
-    eval(u) = quantile(errorModel,u,x->fast_cdf(x))
-    # eval(u) = quantile(errorModel,u)
-    # eval(u) = scipy.stats.norminvgauss.ppf(u,fit...)
+    # The 3 argument quantile in skewNormal.jl takes a scalar u. Broadcast so
+    # eval accepts a vector, which is how every other FittedModel's eval is
+    # called when simulating.
+    eval(u) = quantile.(Ref(errorModel),u,Ref(_cdf))
 
     return FittedModel(nothing, errorModel, eval, errors, u)
-
 end
 
 function fit_weibull(x)

@@ -1,5 +1,24 @@
+# Generates every input and expected-output CSV in data/.
+#
+#   cd testfiles && julia --project=. test_setup.jl
+#
+# Run it twice and diff data/ before trusting a change. Every block seeds its own
+# RNG, so a second run must be byte for byte identical.
+#
+# Test 7.6 calls scipy through PyCall, so regenerating needs a Python with scipy
+# and PyCall built against it. On this machine:
+#
+#   C:/Users/dompa/.local/bin/python.exe -m venv C:/Users/dompa/.venvs/fintech545
+#   C:/Users/dompa/.venvs/fintech545/Scripts/python.exe -m pip install scipy
+#   julia --project=. -e 'ENV["PYTHON"]=raw"C:\Users\dompa\.venvs\fintech545\Scripts\python.exe"; using Pkg; Pkg.build("PyCall")'
+#
+# A uv managed Python is externally managed, so install scipy into a venv built
+# from it rather than into the interpreter itself.
+
 using CSV
 using Distributions
+using Interpolations
+using PyCall
 # using Plots
 # using StatsPlots
 using QuadGK
@@ -16,6 +35,7 @@ using FiniteDiff
 include("../library/bt_american.jl")
 include("../library/ewCov.jl")
 include("../library/expost_factor.jl")
+include("../library/skewNormal.jl")
 include("../library/fitted_model.jl")
 include("../library/gbsm.jl")
 include("../library/missing_cov.jl")
@@ -24,7 +44,8 @@ include("../library/return_accumulate.jl")
 include("../library/RiskStats.jl")
 include("../library/simulate.jl")
 include("../library/optimizers.jl")
-include("../library/expost_factor.jl")
+include("../library/multivariate_t.jl")
+include("../library/copula.jl")
 
 #Test 1 - missing covariance calculations
 #Generate some random numbers with missing values.
@@ -157,14 +178,15 @@ CSV.write("data/testout_5.5.csv",DataFrame(cout,:auto))
 # 6.1 Arithmetic returns
 prices = CSV.read("data/test6.csv",DataFrame)
 rout = return_calculate(prices,dateColumn="Date")
-CSV.write("data/test6_1.csv",rout)
+CSV.write("data/testout6_1.csv",rout)
 
 # 6.2 Log returns
 prices = CSV.read("data/test6.csv",DataFrame)
 rout = return_calculate(prices,method="LOG", dateColumn="Date")
-CSV.write("data/test6_2.csv",rout)
+CSV.write("data/testout6_2.csv",rout)
 
 # Test 7
+Random.seed!(7)
 
 d = Normal(.05,.05)
 x = rand(d,100)
@@ -216,7 +238,35 @@ fd = fit_general_t(cin[:,1])
 fd_aicc = aicc(fd,cin[:,1])
 CSV.write("data/testout7_4.csv", DataFrame(:AICC=>[fd_aicc]))
 
+#7.5 Fit a NIG by the method of moments.
+# The sample is drawn from a known NIG with real skew, so this checks that the
+# closed form inversion recovers the shape and not just the first two moments.
+Random.seed!(75)
+x = rand(NormalInverseGaussian(0.02, 40.0, -8.0, 0.05), 1000)
+CSV.write("data/test7_5.csv",DataFrame([x],:auto))
+
+cin = CSV.read("data/test7_5.csv",DataFrame) |> Matrix
+fd = fit_nig_moments(cin[:,1])
+d = fd.errorModel
+CSV.write("data/testout7_5.csv",
+    DataFrame(:mu=>[d.μ], :alpha=>[d.α], :beta=>[d.β], :delta=>[d.δ]))
+
+#7.6 Fit the same NIG by maximum likelihood.
+# This is the route most students will take, because scipy.stats.norminvgauss
+# has a fit() method. Same data as 7.5, so the two fits are directly comparable:
+# the MLE reaches the higher log likelihood, and 7.5 matches the sample moments
+# exactly. Neither is "the" answer -- they optimize different things.
+#
+# scipy parameterizes the NIG as (a, b, loc, scale) with a = alpha*delta and
+# b = beta*delta, so a student comparing against these columns has to convert.
+cin = CSV.read("data/test7_5.csv",DataFrame) |> Matrix
+fd = fit_NIG_mle(cin[:,1])
+d = fd.errorModel
+CSV.write("data/testout7_6.csv",
+    DataFrame(:mu=>[d.μ], :alpha=>[d.α], :beta=>[d.β], :delta=>[d.δ]))
+
 # Test 8
+Random.seed!(8)
 
 # Test 8.1 VaR Normal
 cin = CSV.read("data/test7_1.csv",DataFrame) |> Matrix
@@ -270,6 +320,7 @@ CSV.write("data/testout8_6.csv",
 ))
 
 # Test 9
+Random.seed!(9)
 A = rand(Normal(0,.03),200)
 B = 0.1*A + rand(TDist(10)*.02,200)
 CSV.write("data/test9_1_returns.csv",DataFrame(:A=>A,:B=>B))
@@ -320,21 +371,21 @@ CSV.write("data/testout10_1.csv",DataFrame(:W=>rpp))
 #10.2 Risk Parity, normal assumption.  Half a risk share to X5
 cin = CSV.read("data/test5_2.csv",DataFrame) |> Matrix
 rpp,status = riskParity(cin,riskBudget=[1,1,1,1,0.5])
-CSV.write("../testfiles/data/testout10_2.csv",DataFrame(:W=>rpp))
+CSV.write("data/testout10_2.csv",DataFrame(:W=>rpp))
 
 #10.3 Max Sharpe Ratio, normal assumption, w>0
 means = [i for i in 0.09:-0.01:0.05]
 CSV.write("data/test10_3_means.csv",DataFrame(:Mean=>means))
 
 cin = CSV.read("data/test5_3.csv",DataFrame) |> Matrix
-means = CSV.read("data/test10_3_means.csv",DataFrame).mean
+means = CSV.read("data/test10_3_means.csv",DataFrame).Mean
 rf = 0.04
 msr, status = maxSR(cin,means,rf)
 CSV.write("data/testout10_3.csv",DataFrame(:W=>msr))
 
 #10.4 Max Sharpe Ratio, normal assumption, 0.1 <= w <= 0.5
 cin = CSV.read("data/test5_3.csv",DataFrame) |> Matrix
-means = CSV.read("data/test10_3_means.csv",DataFrame).mean
+means = CSV.read("data/test10_3_means.csv",DataFrame).Mean
 rf = 0.04
 bounds = hcat(fill(0.1,5),fill(0.5,5))
 msr, status = maxSR(cin,means,rf,bounds)
@@ -346,7 +397,7 @@ CSV.write("data/test11_1_weights.csv",DataFrame(:W=>stWgt))
 
 returns = CSV.read("data/test11_1_returns.csv",DataFrame)
 stWgt = CSV.read("data/test11_1_weights.csv",DataFrame).W
-Attribution, weights, factorWeights = expost_factor(stWgt,returns,returns,I(3))
+Attribution = expost_factor(stWgt,returns,returns,I(3)).Attribution
 select!(Attribution, Not(:Alpha))
 CSV.write("data/testout11_1.csv",Attribution)
 
@@ -362,10 +413,10 @@ CSV.write("data/test11_2_stock_returns.csv",DataFrame(stock_returns,[:S1, :S2]))
 CSV.write("data/test11_2_beta.csv",hcat(DataFrame(:Stock=>["S1","S2"]),DataFrame(beta,[:F1, :F2, :F3])))
 
 stWgt = CSV.read("data/test11_2_weights.csv",DataFrame).W
-factor_returns = CSV.read("data/test11_2_factor_returns.csv",DataFrame) |> Matrix
-stock_returns = CSV.read("data/test11_2_stock_returns.csv",DataFrame) |> Matrix
+factor_returns = CSV.read("data/test11_2_factor_returns.csv",DataFrame)
+stock_returns = CSV.read("data/test11_2_stock_returns.csv",DataFrame)
 beta = CSV.read("data/test11_2_beta.csv",DataFrame)[!,2:end] |> Matrix
-Attribution, weights, factorWeights = expost_factor(stWgt,stock_returns,factor_returns,beta)
+Attribution = expost_factor(stWgt,stock_returns,factor_returns,beta).Attribution
 CSV.write("data/testout11_2.csv",Attribution)
 
 #12.1 European Options GBSM with Greeks
@@ -456,3 +507,94 @@ outVals = [bt_american(o["Option Type"] == "Call",
                 o.N) for o in eachrow(options)]
 
 CSV.write("data/testout12_3.csv",DataFrame(:ID=>options.ID,:Value=>outVals))
+# Test 13 - The multivariate t and the t copula (Week 05)
+#
+# The data is drawn from a multivariate t, so the t copula is the true model.
+# The common chi-square shock is exactly what a Gaussian copula cannot
+# reproduce, which is what makes 13.7 a real choice rather than a coin flip.
+Random.seed!(13)
+
+nms = ["A1","A2","A3","A4","A5"]
+nAssets = length(nms)
+nObs = 250
+
+trueR = fill(0.4,(nAssets,nAssets)) + diagm(fill(0.6,nAssets))
+trueSd = [0.010, 0.015, 0.012, 0.018, 0.013]
+trueNu = 6.0
+# MvTDist carries a scale matrix, not a covariance: cov = nu/(nu-2)*S.
+trueS = (trueSd*trueSd') .* trueR .* ((trueNu-2)/trueNu)
+X = Matrix(rand(MvTDist(trueNu, zeros(nAssets), trueS), nObs)')
+CSV.write("data/test13_returns.csv",DataFrame(X,nms))
+
+portfolio = DataFrame(:Stock=>nms, :currentValue=>[1000.0, 2000.0, 1500.0, 2500.0, 3000.0])
+CSV.write("data/test13_portfolio.csv",portfolio)
+
+X = Matrix(CSV.read("data/test13_returns.csv",DataFrame))
+
+# 13.1 Correlation from Kendall's tau, rho = sin(pi*tau/2), repaired to PD
+R = kendall_correlation(X)
+CSV.write("data/testout13_1.csv",DataFrame(R,:auto))
+
+# 13.2 - 13.4 Fit the multivariate t
+mu, S, nu, ll = fit_multivariate_t(X)
+CSV.write("data/testout13_2.csv",DataFrame(:mu=>mu))
+CSV.write("data/testout13_3.csv",DataFrame(S,:auto))
+CSV.write("data/testout13_4.csv",DataFrame(:nu=>[nu], :ll=>[ll]))
+
+# Fit a generalized t to each margin and transform to U. Both copulas use the
+# same margins and the same R, so they differ by exactly one parameter, nu.
+fittedModels = [fit_general_t(X[:,j]) for j in 1:nAssets]
+U = hcat([fm.u for fm in fittedModels]...)
+
+# 13.5 Gaussian copula log likelihood
+Rc, llG = fit_gaussian_copula(U)
+CSV.write("data/testout13_5.csv",DataFrame(:ll=>[llG]))
+
+# 13.6 t copula, nu by profile
+Rc, nuC, llT = fit_t_copula(U)
+CSV.write("data/testout13_6.csv",DataFrame(:nu=>[nuC], :ll=>[llT]))
+
+# 13.7 Choose between them. The Gaussian copula has no free parameter beyond R,
+# the t copula adds nu, so kG = 0 and kT = 1.
+kG, kT = 0, 1
+CSV.write("data/testout13_7.csv",
+    DataFrame(:Copula=>["Gaussian","T"],
+              :LL=>[llG, llT],
+              :K=>[kG, kT],
+              :AICC=>[copula_aicc(llG,kG,nObs), copula_aicc(llT,kT,nObs)],
+              :BIC=>[copula_bic(llG,kG,nObs), copula_bic(llT,kT,nObs)]
+))
+
+# 13.8 Lower tail dependence implied by the fitted t copula. Every one of these
+# is 0 under the Gaussian copula, whatever the correlation.
+tdi = Int64[]; tdj = Int64[]; tdRho = Float64[]; tdLambda = Float64[]
+for i in 1:nAssets, j in (i+1):nAssets
+    push!(tdi,i); push!(tdj,j)
+    push!(tdRho,Rc[i,j])
+    push!(tdLambda,tail_dependence_t(Rc[i,j],nuC))
+end
+CSV.write("data/testout13_8.csv",
+    DataFrame(:I=>tdi, :J=>tdj, :Rho=>tdRho, :Lambda=>tdLambda))
+
+# 13.9 Portfolio VaR and ES under the t copula. Same shape as test 9.1, which
+# does the Gaussian copula, so the two are directly comparable.
+nSim = 100000
+simU = simulate_t_copula(Rc, nuC, nSim; seed=13)
+simRet = DataFrame([fittedModels[j].eval(simU[:,j]) for j in 1:nAssets], nms)
+
+iteration = [i for i in 1:nSim]
+values = crossjoin(portfolio, DataFrame(:iteration=>iteration))
+
+nv = size(values,1)
+pnl = Vector{Float64}(undef,nv)
+simulatedValue = copy(pnl)
+for i in 1:nv
+    simulatedValue[i] = values.currentValue[i] * (1 + simRet[values.iteration[i],values.Stock[i]])
+    pnl[i] = simulatedValue[i] - values.currentValue[i]
+end
+
+values[!,:pnl] = pnl
+values[!,:simulatedValue] = simulatedValue
+
+risk = select(aggRisk(values,[:Stock]),[:Stock, :VaR95, :ES95, :VaR95_Pct, :ES95_Pct])
+CSV.write("data/testout13_9.csv",risk)

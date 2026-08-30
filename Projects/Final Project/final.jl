@@ -377,7 +377,7 @@ for s in stocks
     catch
     end
     try
-        nig = fit_NIG_mm(x)
+        nig = fit_NIG_mle(x)
         aiccs[nig] = aicc(nig,x)
     catch
     end
