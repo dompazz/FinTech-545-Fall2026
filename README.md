@@ -41,11 +41,11 @@ as `Week 05 - Expected Shortfall and Copulas.pdf` rather than `week05.pdf`.
 
 Decks live in `Week0N/slides/`, one level below the notes. That keeps them out of
 the `Week*/week*.qmd` wildcard `make` uses, which would otherwise try to render a
-deck as an article PDF, and out of the way of `make clean`. Weeks 02, 03, and 04
+deck as an article PDF, and out of the way of `make clean`. Weeks 02 through 05
 have decks so far. One on its own:
 
 ```
-quarto render Week04/slides/week04-slides.qmd --to revealjs
+quarto render Week05/slides/week05-slides.qmd --to revealjs
 ```
 
 A deck reads its figures from `../figures/`, so nothing is duplicated.
