@@ -1,4 +1,3 @@
-
 # FinTech 545 --- Quantitative Risk Management
 
 Lecture notes, code, and problem sets for FinTech 545. Nine weeks of notes are
@@ -42,7 +41,7 @@ as `Week 05 - Expected Shortfall and Copulas.pdf` rather than `week05.pdf`.
 
 Decks live in `Week0N/slides/`, one level below the notes. That keeps them out of
 the `Week*/week*.qmd` wildcard `make` uses, which would otherwise try to render a
-deck as an article PDF, and out of the way of `make clean`. Weeks 02 through 05
+deck as an article PDF, and out of the way of `make clean`. Weeks 02 through 06
 have decks so far. One on its own:
 
 ```
